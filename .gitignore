@@ -1,0 +1,30 @@
+# Binaries (root-level only)
+/atlassian
+/atlassian.exe
+/atlassian-mcp
+/atlassian-mcp.exe
+/mcp
+/mcp.exe
+
+# Build output
+*.out
+*.test
+dist/
+
+# Go test cache
+/vendor/
+
+# Environment / secrets
+.env
+.env.*
+*.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
