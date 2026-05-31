@@ -31,6 +31,7 @@ import (
 	"github.com/jinkp/atlassian-go-mcp/internal/claude"
 	"github.com/jinkp/atlassian-go-mcp/internal/claudedesktop"
 	"github.com/jinkp/atlassian-go-mcp/internal/cursor"
+	"github.com/jinkp/atlassian-go-mcp/internal/envstore"
 	mcpserver "github.com/jinkp/atlassian-go-mcp/internal/mcp"
 	"github.com/jinkp/atlassian-go-mcp/internal/mcp/features"
 	"github.com/jinkp/atlassian-go-mcp/internal/opencode"
@@ -111,6 +112,9 @@ func newMCPCommand() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Load credentials from ~/.mcp/atlassian/.env (env vars still win).
+			envstore.Apply(envstore.Load())
+
 			cfg, err := mcpserver.ConfigFromEnv()
 			if err != nil {
 				return err
