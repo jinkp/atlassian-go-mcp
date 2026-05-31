@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -196,6 +197,205 @@ func ToolCreateGoal(goalsSvc goals.GoalsService, log audit.Logger) server.ToolHa
 			return mcp.NewToolResultError(fmt.Sprintf("serialization error: %v", marshalErr)), nil
 		}
 		return mcp.NewToolResultText(string(data)), nil
+	}
+}
+
+// ToolGetGoalMetrics returns an MCP tool handler that lists all MetricTargets for a goal.
+// Required: goal_id. Returns []MetricTarget as JSON.
+func ToolGetGoalMetrics(goalsSvc goals.GoalsService) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		goalID := mcp.ParseString(req, "goal_id", "")
+		if goalID == "" {
+			return mcp.NewToolResultError("goal_id is required"), nil
+		}
+
+		metrics, svcErr := goalsSvc.GetGoalMetrics(ctx, goalID)
+		if svcErr != nil {
+			return mcp.NewToolResultError(svcErr.Error()), nil
+		}
+
+		if metrics == nil {
+			metrics = []goals.MetricTarget{}
+		}
+
+		data, marshalErr := json.Marshal(metrics)
+		if marshalErr != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("serialization error: %v", marshalErr)), nil
+		}
+		return mcp.NewToolResultText(string(data)), nil
+	}
+}
+
+// ToolCreateMetric returns an MCP tool handler that creates a new metric and attaches it to a goal.
+// Required: WriteGuardCheck, goal_id, name, metric_type, start_value, target_value, initial_value.
+// Returns the new MetricTarget as JSON.
+func ToolCreateMetric(goalsSvc goals.GoalsService, log audit.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if err := WriteGuardCheck(); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
+		goalID := mcp.ParseString(req, "goal_id", "")
+		if goalID == "" {
+			return mcp.NewToolResultError("goal_id is required"), nil
+		}
+
+		name := mcp.ParseString(req, "name", "")
+		if name == "" {
+			return mcp.NewToolResultError("name is required"), nil
+		}
+
+		metricType := mcp.ParseString(req, "metric_type", "")
+		if metricType == "" {
+			return mcp.NewToolResultError("metric_type is required"), nil
+		}
+
+		startValueStr := mcp.ParseString(req, "start_value", "")
+		if startValueStr == "" {
+			return mcp.NewToolResultError("start_value is required"), nil
+		}
+
+		targetValueStr := mcp.ParseString(req, "target_value", "")
+		if targetValueStr == "" {
+			return mcp.NewToolResultError("target_value is required"), nil
+		}
+
+		initialValueStr := mcp.ParseString(req, "initial_value", "")
+		if initialValueStr == "" {
+			return mcp.NewToolResultError("initial_value is required"), nil
+		}
+
+		startValue, err := strconv.ParseFloat(startValueStr, 64)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("start_value must be a number: %v", err)), nil
+		}
+		targetValue, err := strconv.ParseFloat(targetValueStr, 64)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("target_value must be a number: %v", err)), nil
+		}
+		initialValue, err := strconv.ParseFloat(initialValueStr, 64)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("initial_value must be a number: %v", err)), nil
+		}
+
+		createReq := goals.CreateMetricRequest{
+			GoalID:       goalID,
+			Name:         name,
+			MetricType:   metricType,
+			StartValue:   startValue,
+			TargetValue:  targetValue,
+			InitialValue: initialValue,
+		}
+
+		result, svcErr := goalsSvc.CreateMetric(ctx, createReq)
+		log.Log(audit.NewEntry("create_metric", "goals",
+			map[string]any{"goal_id": goalID, "name": name}, svcErr))
+		if svcErr != nil {
+			return mcp.NewToolResultError(svcErr.Error()), nil
+		}
+
+		data, marshalErr := json.Marshal(result)
+		if marshalErr != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("serialization error: %v", marshalErr)), nil
+		}
+		return mcp.NewToolResultText(string(data)), nil
+	}
+}
+
+// ToolUpdateMetricValue returns an MCP tool handler that adds a value datapoint to a metric.
+// Required: WriteGuardCheck, metric_id, value. Optional: time (ISO 8601).
+// Returns the new MetricValue as JSON.
+func ToolUpdateMetricValue(goalsSvc goals.GoalsService, log audit.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if err := WriteGuardCheck(); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
+		metricID := mcp.ParseString(req, "metric_id", "")
+		if metricID == "" {
+			return mcp.NewToolResultError("metric_id is required"), nil
+		}
+
+		valueStr := mcp.ParseString(req, "value", "")
+		if valueStr == "" {
+			return mcp.NewToolResultError("value is required"), nil
+		}
+		value, err := strconv.ParseFloat(valueStr, 64)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("value must be a number: %v", err)), nil
+		}
+
+		timeStr := mcp.ParseString(req, "time", "")
+
+		updateReq := goals.UpdateMetricValueRequest{
+			MetricID: metricID,
+			Value:    value,
+			Time:     timeStr,
+		}
+
+		result, svcErr := goalsSvc.UpdateMetricValue(ctx, updateReq)
+		log.Log(audit.NewEntry("update_metric_value", "goals",
+			map[string]any{"metric_id": metricID, "value": value}, svcErr))
+		if svcErr != nil {
+			return mcp.NewToolResultError(svcErr.Error()), nil
+		}
+
+		data, marshalErr := json.Marshal(result)
+		if marshalErr != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("serialization error: %v", marshalErr)), nil
+		}
+		return mcp.NewToolResultText(string(data)), nil
+	}
+}
+
+// ToolUpdateMetricTarget returns an MCP tool handler that updates MetricTarget values.
+// Required: WriteGuardCheck, metric_target_id.
+// Optional: current_value, start_value, target_value (as numeric strings; empty = omit).
+// Returns "ok" on success.
+func ToolUpdateMetricTarget(goalsSvc goals.GoalsService, log audit.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if err := WriteGuardCheck(); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
+		metricTargetID := mcp.ParseString(req, "metric_target_id", "")
+		if metricTargetID == "" {
+			return mcp.NewToolResultError("metric_target_id is required"), nil
+		}
+
+		updateReq := goals.UpdateMetricTargetRequest{
+			MetricTargetID: metricTargetID,
+		}
+
+		if cv := mcp.ParseString(req, "current_value", ""); cv != "" {
+			f, err := strconv.ParseFloat(cv, 64)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("current_value must be a number: %v", err)), nil
+			}
+			updateReq.CurrentValue = &f
+		}
+		if sv := mcp.ParseString(req, "start_value", ""); sv != "" {
+			f, err := strconv.ParseFloat(sv, 64)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("start_value must be a number: %v", err)), nil
+			}
+			updateReq.StartValue = &f
+		}
+		if tv := mcp.ParseString(req, "target_value", ""); tv != "" {
+			f, err := strconv.ParseFloat(tv, 64)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("target_value must be a number: %v", err)), nil
+			}
+			updateReq.TargetValue = &f
+		}
+
+		svcErr := goalsSvc.UpdateMetricTarget(ctx, updateReq)
+		log.Log(audit.NewEntry("update_metric_target", "goals",
+			map[string]any{"metric_target_id": metricTargetID}, svcErr))
+		if svcErr != nil {
+			return mcp.NewToolResultError(svcErr.Error()), nil
+		}
+		return mcp.NewToolResultText("ok"), nil
 	}
 }
 

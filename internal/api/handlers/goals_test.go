@@ -16,12 +16,16 @@ import (
 
 // mockGoalsService implements goals.GoalsService for testing.
 type mockGoalsService struct {
-	getSiteIDFunc         func(ctx context.Context, subdomain string) (string, error)
-	getGoalFunc           func(ctx context.Context, goalID string) (*goals.Goal, error)
-	searchGoalsFunc       func(ctx context.Context, req goals.SearchGoalsRequest) (*goals.GoalSearchResult, error)
-	updateGoalStatusFunc  func(ctx context.Context, req goals.UpdateGoalStatusRequest) error
-	createGoalFunc        func(ctx context.Context, req goals.CreateGoalRequest) (*goals.CreateGoalResult, error)
-	editGoalFunc          func(ctx context.Context, req goals.EditGoalRequest) (*goals.Goal, error)
+	getSiteIDFunc          func(ctx context.Context, subdomain string) (string, error)
+	getGoalFunc            func(ctx context.Context, goalID string) (*goals.Goal, error)
+	searchGoalsFunc        func(ctx context.Context, req goals.SearchGoalsRequest) (*goals.GoalSearchResult, error)
+	updateGoalStatusFunc   func(ctx context.Context, req goals.UpdateGoalStatusRequest) error
+	createGoalFunc         func(ctx context.Context, req goals.CreateGoalRequest) (*goals.CreateGoalResult, error)
+	editGoalFunc           func(ctx context.Context, req goals.EditGoalRequest) (*goals.Goal, error)
+	getGoalMetricsFunc     func(ctx context.Context, goalID string) ([]goals.MetricTarget, error)
+	createMetricFunc       func(ctx context.Context, req goals.CreateMetricRequest) (*goals.MetricTarget, error)
+	updateMetricValueFunc  func(ctx context.Context, req goals.UpdateMetricValueRequest) (*goals.MetricValue, error)
+	updateMetricTargetFunc func(ctx context.Context, req goals.UpdateMetricTargetRequest) error
 }
 
 func (m *mockGoalsService) GetSiteID(ctx context.Context, subdomain string) (string, error) {
@@ -59,6 +63,34 @@ func (m *mockGoalsService) EditGoal(ctx context.Context, req goals.EditGoalReque
 		return m.editGoalFunc(ctx, req)
 	}
 	return &goals.Goal{ID: req.GoalID, Name: "Updated"}, nil
+}
+
+func (m *mockGoalsService) GetGoalMetrics(ctx context.Context, goalID string) ([]goals.MetricTarget, error) {
+	if m.getGoalMetricsFunc != nil {
+		return m.getGoalMetricsFunc(ctx, goalID)
+	}
+	return []goals.MetricTarget{}, nil
+}
+
+func (m *mockGoalsService) CreateMetric(ctx context.Context, req goals.CreateMetricRequest) (*goals.MetricTarget, error) {
+	if m.createMetricFunc != nil {
+		return m.createMetricFunc(ctx, req)
+	}
+	return &goals.MetricTarget{}, nil
+}
+
+func (m *mockGoalsService) UpdateMetricValue(ctx context.Context, req goals.UpdateMetricValueRequest) (*goals.MetricValue, error) {
+	if m.updateMetricValueFunc != nil {
+		return m.updateMetricValueFunc(ctx, req)
+	}
+	return &goals.MetricValue{}, nil
+}
+
+func (m *mockGoalsService) UpdateMetricTarget(ctx context.Context, req goals.UpdateMetricTargetRequest) error {
+	if m.updateMetricTargetFunc != nil {
+		return m.updateMetricTargetFunc(ctx, req)
+	}
+	return nil
 }
 
 func TestGoalsGetSiteID(t *testing.T) {

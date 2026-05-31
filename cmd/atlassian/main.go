@@ -239,6 +239,22 @@ func (n *nilGoalsService) EditGoal(_ context.Context, _ goalssvc.EditGoalRequest
 	return nil, fmt.Errorf("service not initialized: missing env vars")
 }
 
+func (n *nilGoalsService) GetGoalMetrics(_ context.Context, _ string) ([]goalssvc.MetricTarget, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+
+func (n *nilGoalsService) CreateMetric(_ context.Context, _ goalssvc.CreateMetricRequest) (*goalssvc.MetricTarget, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+
+func (n *nilGoalsService) UpdateMetricValue(_ context.Context, _ goalssvc.UpdateMetricValueRequest) (*goalssvc.MetricValue, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+
+func (n *nilGoalsService) UpdateMetricTarget(_ context.Context, _ goalssvc.UpdateMetricTargetRequest) error {
+	return fmt.Errorf("service not initialized: missing env vars")
+}
+
 // --- nilReleasesService: no-op Releases service for --help without credentials ---
 
 type nilReleasesService struct{}

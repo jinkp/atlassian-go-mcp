@@ -203,6 +203,22 @@ func (m *mockServerGoalsService) EditGoal(_ context.Context, _ goals.EditGoalReq
 	return &goals.Goal{}, nil
 }
 
+func (m *mockServerGoalsService) GetGoalMetrics(_ context.Context, _ string) ([]goals.MetricTarget, error) {
+	return []goals.MetricTarget{}, nil
+}
+
+func (m *mockServerGoalsService) CreateMetric(_ context.Context, _ goals.CreateMetricRequest) (*goals.MetricTarget, error) {
+	return &goals.MetricTarget{}, nil
+}
+
+func (m *mockServerGoalsService) UpdateMetricValue(_ context.Context, _ goals.UpdateMetricValueRequest) (*goals.MetricValue, error) {
+	return &goals.MetricValue{}, nil
+}
+
+func (m *mockServerGoalsService) UpdateMetricTarget(_ context.Context, _ goals.UpdateMetricTargetRequest) error {
+	return nil
+}
+
 // mockServerReleasesService is a minimal releases.ReleasesService for server construction tests.
 type mockServerReleasesService struct{}
 

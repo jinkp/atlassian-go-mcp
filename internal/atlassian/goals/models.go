@@ -259,4 +259,196 @@ func firstGraphQLError(errs []graphQLError) string {
 	return ""
 }
 
+// --- Domain models for Goal Metrics ---
+
+// Metric is the domain model for an Atlassian Goal metric.
+// Type is one of CURRENCY | NUMERIC | PERCENTAGE.
+type Metric struct {
+	ID          string       `json:"id"`
+	Name        string       `json:"name"`
+	Type        string       `json:"type"`
+	Archived    bool         `json:"archived"`
+	LatestValue *MetricValue `json:"latest_value,omitempty"`
+}
+
+// MetricValue is a single value datapoint for a metric.
+type MetricValue struct {
+	ID    string  `json:"id"`
+	Value float64 `json:"value"`
+	Time  string  `json:"time,omitempty"`
+}
+
+// MetricTarget links a Metric to a Goal with start/target/current values.
+type MetricTarget struct {
+	ID           string   `json:"id"`
+	Metric       Metric   `json:"metric"`
+	StartValue   float64  `json:"start_value"`
+	TargetValue  float64  `json:"target_value"`
+	CurrentValue *float64 `json:"current_value,omitempty"`
+}
+
+// CreateMetricRequest holds parameters for creating a new metric attached to a goal.
+type CreateMetricRequest struct {
+	GoalID       string  // required
+	Name         string  // required
+	MetricType   string  // required: CURRENCY | NUMERIC | PERCENTAGE
+	StartValue   float64 // required
+	TargetValue  float64 // required
+	InitialValue float64 // required; maps to createMetric.value (initial current value)
+}
+
+// UpdateMetricValueRequest holds parameters for adding a value datapoint to a metric.
+type UpdateMetricValueRequest struct {
+	MetricID string  // required
+	Value    float64 // required
+	Time     string  // optional ISO 8601
+}
+
+// UpdateMetricTargetRequest holds parameters for updating a MetricTarget's values.
+type UpdateMetricTargetRequest struct {
+	MetricTargetID string   // required
+	CurrentValue   *float64 // optional; nil = omit
+	StartValue     *float64 // optional; nil = omit
+	TargetValue    *float64 // optional; nil = omit
+}
+
+// --- Wire types for Goal Metrics (unexported) ---
+
+// goalsGetMetricsData decodes the goals_byId.metricTargets response.
+// Separate from goalsByIdData to avoid conflicting selection sets.
+type goalsGetMetricsData struct {
+	GoalsByID *struct {
+		MetricTargets struct {
+			Edges []struct {
+				Node metricTargetAPIItem `json:"node"`
+			} `json:"edges"`
+		} `json:"metricTargets"`
+	} `json:"goals_byId"`
+}
+
+// metricTargetAPIItem is the wire-format MetricTarget node returned by GraphQL.
+type metricTargetAPIItem struct {
+	ID          string  `json:"id"`
+	StartValue  float64 `json:"startValue"`
+	TargetValue float64 `json:"targetValue"`
+	SnapshotValue *struct {
+		Value float64 `json:"value"`
+		Time  string  `json:"time"`
+	} `json:"snapshotValue"`
+	Metric struct {
+		ID       string `json:"id"`
+		Name     string `json:"name"`
+		Type     string `json:"type"`
+		Archived bool   `json:"archived"`
+		LatestValue *struct {
+			ID    string  `json:"id"`
+			Value float64 `json:"value"`
+			Time  string  `json:"time"`
+		} `json:"latestValue"`
+	} `json:"metric"`
+}
+
+// toMetricTarget converts a wire metricTargetAPIItem to the domain MetricTarget model.
+func (item metricTargetAPIItem) toMetricTarget() MetricTarget {
+	mt := MetricTarget{
+		ID:          item.ID,
+		StartValue:  item.StartValue,
+		TargetValue: item.TargetValue,
+		Metric: Metric{
+			ID:       item.Metric.ID,
+			Name:     item.Metric.Name,
+			Type:     item.Metric.Type,
+			Archived: item.Metric.Archived,
+		},
+	}
+	if item.SnapshotValue != nil {
+		v := item.SnapshotValue.Value
+		mt.CurrentValue = &v
+	}
+	if item.Metric.LatestValue != nil {
+		mt.Metric.LatestValue = &MetricValue{
+			ID:    item.Metric.LatestValue.ID,
+			Value: item.Metric.LatestValue.Value,
+			Time:  item.Metric.LatestValue.Time,
+		}
+	}
+	return mt
+}
+
+// createAndAddMetricTargetInput is the GraphQL input for goals_createAndAddMetricTarget.
+type createAndAddMetricTargetInput struct {
+	GoalID       string                  `json:"goalId"`
+	StartValue   float64                 `json:"startValue"`
+	TargetValue  float64                 `json:"targetValue"`
+	CreateMetric createMetricInlineInput `json:"createMetric"`
+}
+
+// createMetricInlineInput is the nested createMetric field inside createAndAddMetricTargetInput.
+type createMetricInlineInput struct {
+	GoalID string  `json:"goalId"`
+	Name   string  `json:"name"`
+	Type   string  `json:"type"`
+	Value  float64 `json:"value"`
+}
+
+// createAndAddMetricResponseData decodes the goals_createAndAddMetricTarget response.
+type createAndAddMetricResponseData struct {
+	GoalsCreateAndAddMetricTarget struct {
+		Success bool `json:"success"`
+		Errors  []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+		Goal *struct {
+			MetricTargets struct {
+				Edges []struct {
+					Node metricTargetAPIItem `json:"node"`
+				} `json:"edges"`
+			} `json:"metricTargets"`
+		} `json:"goal"`
+	} `json:"goals_createAndAddMetricTarget"`
+}
+
+// createMetricValueInput is the GraphQL input for goals_createMetricValue.
+type createMetricValueInput struct {
+	MetricID string  `json:"metricId"`
+	Value    float64 `json:"value"`
+	Time     string  `json:"time,omitempty"`
+}
+
+// createMetricValueResponseData decodes the goals_createMetricValue response.
+type createMetricValueResponseData struct {
+	GoalsCreateMetricValue struct {
+		Success bool `json:"success"`
+		Errors  []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+		MetricValue *metricValueAPIItem `json:"metricValue"`
+	} `json:"goals_createMetricValue"`
+}
+
+// metricValueAPIItem is the wire-format MetricValue returned by goals_createMetricValue.
+type metricValueAPIItem struct {
+	ID    string  `json:"id"`
+	Value float64 `json:"value"`
+	Time  string  `json:"time"`
+}
+
+// editMetricTargetInput is the GraphQL input for goals_editMetricTarget.
+type editMetricTargetInput struct {
+	MetricTargetID string   `json:"metricTargetId"`
+	CurrentValue   *float64 `json:"currentValue,omitempty"`
+	StartValue     *float64 `json:"startValue,omitempty"`
+	TargetValue    *float64 `json:"targetValue,omitempty"`
+}
+
+// editMetricTargetResponseData decodes the goals_editMetricTarget response.
+type editMetricTargetResponseData struct {
+	GoalsEditMetricTarget struct {
+		Success bool `json:"success"`
+		Errors  []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	} `json:"goals_editMetricTarget"`
+}
+
 

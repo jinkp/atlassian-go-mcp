@@ -678,6 +678,104 @@ func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc 
 
 	s.AddTool(
 		mcp.NewTool(
+			"get_goal_metrics",
+			mcp.WithDescription("List all metric targets (metrics) for an Atlassian Goal"),
+			mcp.WithString(
+				"goal_id",
+				mcp.Required(),
+				mcp.Description("Goal ARI, e.g. ari:cloud:townsquare:{siteId}:goal/{uuid}"),
+			),
+		),
+		ToolGetGoalMetrics(goalsSvc),
+	)
+
+	s.AddTool(
+		mcp.NewTool(
+			"create_metric",
+			mcp.WithDescription("Create a new metric and attach it to an Atlassian Goal. Requires ENABLE_WRITE=true."),
+			mcp.WithString(
+				"goal_id",
+				mcp.Required(),
+				mcp.Description("Goal ARI"),
+			),
+			mcp.WithString(
+				"name",
+				mcp.Required(),
+				mcp.Description("Metric name, e.g. 'Revenue'"),
+			),
+			mcp.WithString(
+				"metric_type",
+				mcp.Required(),
+				mcp.Description("Metric type: CURRENCY | NUMERIC | PERCENTAGE"),
+			),
+			mcp.WithString(
+				"start_value",
+				mcp.Required(),
+				mcp.Description("Start value (numeric), e.g. '0'"),
+			),
+			mcp.WithString(
+				"target_value",
+				mcp.Required(),
+				mcp.Description("Target value (numeric), e.g. '100'"),
+			),
+			mcp.WithString(
+				"initial_value",
+				mcp.Required(),
+				mcp.Description("Initial current value (numeric), e.g. '0'"),
+			),
+		),
+		ToolCreateMetric(goalsSvc, log),
+	)
+
+	s.AddTool(
+		mcp.NewTool(
+			"update_metric_value",
+			mcp.WithDescription("Add a value datapoint to an existing metric. Requires ENABLE_WRITE=true."),
+			mcp.WithString(
+				"metric_id",
+				mcp.Required(),
+				mcp.Description("Metric ID"),
+			),
+			mcp.WithString(
+				"value",
+				mcp.Required(),
+				mcp.Description("Numeric value to record, e.g. '75'"),
+			),
+			mcp.WithString(
+				"time",
+				mcp.Description("Timestamp ISO 8601, e.g. '2024-01-15T00:00:00Z' (optional, defaults to now)"),
+			),
+		),
+		ToolUpdateMetricValue(goalsSvc, log),
+	)
+
+	s.AddTool(
+		mcp.NewTool(
+			"update_metric_target",
+			mcp.WithDescription("Update start, current, and/or target values of a MetricTarget. Requires ENABLE_WRITE=true."),
+			mcp.WithString(
+				"metric_target_id",
+				mcp.Required(),
+				mcp.Description("MetricTarget ID"),
+			),
+			mcp.WithString(
+				"current_value",
+				mcp.Description("New current value (numeric string, optional)"),
+			),
+			mcp.WithString(
+				"start_value",
+				mcp.Description("New start value (numeric string, optional)"),
+			),
+			mcp.WithString(
+				"target_value",
+				mcp.Description("New target value (numeric string, optional)"),
+			),
+		),
+		ToolUpdateMetricTarget(goalsSvc, log),
+	)
+
+	s.AddTool(
+		mcp.NewTool(
 			"search_teams",
 			mcp.WithDescription("List or search Atlassian teams in the organization"),
 			mcp.WithString(

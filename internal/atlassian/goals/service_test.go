@@ -757,6 +757,549 @@ func TestEditGoal(t *testing.T) {
 	}
 }
 
+// --- TestGetGoalMetrics ---
+
+func TestGetGoalMetrics(t *testing.T) {
+	ptrFloat := func(f float64) *float64 { return &f }
+	twoMetricsJSON := `{
+		"data": {
+			"goals_byId": {
+				"metricTargets": {
+					"edges": [
+						{"node": {
+							"id": "mt1",
+							"startValue": 0,
+							"targetValue": 100,
+							"snapshotValue": {"value": 75.5, "time": "2024-01-15T00:00:00Z"},
+							"metric": {"id": "m1", "name": "Revenue", "type": "CURRENCY", "archived": false, "latestValue": {"id": "mv1", "value": 75.5, "time": "2024-01-15T00:00:00Z"}}
+						}},
+						{"node": {
+							"id": "mt2",
+							"startValue": 0,
+							"targetValue": 50,
+							"snapshotValue": null,
+							"metric": {"id": "m2", "name": "NPS", "type": "NUMERIC", "archived": false, "latestValue": null}
+						}}
+					]
+				}
+			}
+		}
+	}`
+
+	tests := []struct {
+		name           string
+		handler        func(w http.ResponseWriter, r *http.Request)
+		goalID         string
+		wantLen        int
+		wantErrIs      error
+		wantErrMsg     string
+		checkFn        func(t *testing.T, result []MetricTarget)
+	}{
+		{
+			name:    "success - 2 MetricTargets returned",
+			goalID:  "ari:cloud:townsquare:abc:goal/g1",
+			wantLen: 2,
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(twoMetricsJSON))
+			},
+			checkFn: func(t *testing.T, result []MetricTarget) {
+				t.Helper()
+				if result[0].ID != "mt1" {
+					t.Errorf("ID[0]: got %q, want mt1", result[0].ID)
+				}
+				if result[0].Metric.Name != "Revenue" {
+					t.Errorf("Metric.Name[0]: got %q, want Revenue", result[0].Metric.Name)
+				}
+				if result[0].CurrentValue == nil || *result[0].CurrentValue != 75.5 {
+					t.Errorf("CurrentValue[0]: got %v, want 75.5", result[0].CurrentValue)
+				}
+				if result[1].CurrentValue != nil {
+					t.Errorf("CurrentValue[1]: got %v, want nil (snapshotValue null)", result[1].CurrentValue)
+				}
+			},
+		},
+		{
+			name:    "empty edges - returns empty slice",
+			goalID:  "ari:cloud:townsquare:abc:goal/g1",
+			wantLen: 0,
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"data":{"goals_byId":{"metricTargets":{"edges":[]}}}}`))
+			},
+		},
+		{
+			name:    "null goals_byId - returns empty slice not error",
+			goalID:  "ari:cloud:townsquare:abc:goal/missing",
+			wantLen: 0,
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"data":{"goals_byId":null}}`))
+			},
+		},
+		{
+			name:      "HTTP 401 - unauthorized",
+			goalID:    "ari:cloud:townsquare:abc:goal/g1",
+			wantErrIs: jira.ErrUnauthorized,
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusUnauthorized)
+			},
+		},
+		{
+			name:       "GraphQL errors array",
+			goalID:     "ari:cloud:townsquare:abc:goal/g1",
+			wantErrMsg: "forbidden",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"errors":[{"message":"forbidden"}]}`))
+			},
+		},
+		{
+			name:    "snapshotValue present - CurrentValue set",
+			goalID:  "ari:cloud:townsquare:abc:goal/g1",
+			wantLen: 1,
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"data":{"goals_byId":{"metricTargets":{"edges":[{"node":{"id":"mt1","startValue":0,"targetValue":100,"snapshotValue":{"value":42.0,"time":""},"metric":{"id":"m1","name":"X","type":"NUMERIC","archived":false,"latestValue":null}}}]}}}}`))
+			},
+			checkFn: func(t *testing.T, result []MetricTarget) {
+				t.Helper()
+				if result[0].CurrentValue == nil {
+					t.Fatal("CurrentValue should not be nil when snapshotValue present")
+				}
+				if *result[0].CurrentValue != 42.0 {
+					t.Errorf("CurrentValue: got %v, want 42.0", *result[0].CurrentValue)
+				}
+			},
+		},
+	}
+	_ = ptrFloat // used in checkFn closures above
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(tc.handler))
+			defer srv.Close()
+
+			svc := newTestService(srv.URL)
+			result, err := svc.GetGoalMetrics(context.Background(), tc.goalID)
+
+			if tc.wantErrIs != nil {
+				if !errors.Is(err, tc.wantErrIs) {
+					t.Errorf("error: got %v, want %v", err, tc.wantErrIs)
+				}
+				return
+			}
+			if tc.wantErrMsg != "" {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tc.wantErrMsg) {
+					t.Errorf("error %q does not contain %q", err.Error(), tc.wantErrMsg)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result == nil {
+				t.Fatal("result must not be nil")
+			}
+			if len(result) != tc.wantLen {
+				t.Errorf("len: got %d, want %d", len(result), tc.wantLen)
+			}
+			if tc.checkFn != nil {
+				tc.checkFn(t, result)
+			}
+		})
+	}
+}
+
+// --- TestCreateMetric ---
+
+func TestCreateMetric(t *testing.T) {
+	tests := []struct {
+		name            string
+		handler         func(w http.ResponseWriter, r *http.Request)
+		captureBody     bool
+		req             CreateMetricRequest
+		wantErrIs       error
+		wantErrMsg      string
+		wantID          string
+		wantMetricName  string
+		bodyCheckFn     func(t *testing.T, body []byte)
+	}{
+		{
+			name: "success - returns MetricTarget with new metric",
+			req:  CreateMetricRequest{GoalID: "g1", Name: "Revenue", MetricType: "CURRENCY", StartValue: 0, TargetValue: 100, InitialValue: 50},
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"data":{"goals_createAndAddMetricTarget":{"success":true,"errors":[],"goal":{"metricTargets":{"edges":[{"node":{"id":"mt1","startValue":0,"targetValue":100,"snapshotValue":null,"metric":{"id":"m1","name":"Revenue","type":"CURRENCY","archived":false,"latestValue":null}}}]}}}}}`))
+			},
+			wantID:         "mt1",
+			wantMetricName: "Revenue",
+		},
+		{
+			name: "success:false with errors - returns error",
+			req:  CreateMetricRequest{GoalID: "g1", Name: "X", MetricType: "NUMERIC", StartValue: 0, TargetValue: 10, InitialValue: 0},
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"data":{"goals_createAndAddMetricTarget":{"success":false,"errors":[{"message":"invalid goal type"}],"goal":null}}}`))
+			},
+			wantErrMsg: "invalid goal type",
+		},
+		{
+			name: "HTTP 401 - unauthorized",
+			req:  CreateMetricRequest{GoalID: "g1", Name: "X", MetricType: "NUMERIC", StartValue: 0, TargetValue: 10, InitialValue: 0},
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusUnauthorized)
+			},
+			wantErrIs: jira.ErrUnauthorized,
+		},
+		{
+			name: "GraphQL errors[] - returns error",
+			req:  CreateMetricRequest{GoalID: "g1", Name: "X", MetricType: "NUMERIC", StartValue: 0, TargetValue: 10, InitialValue: 0},
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"errors":[{"message":"forbidden"}]}`))
+			},
+			wantErrMsg: "forbidden",
+		},
+		{
+			name:        "goalId appears in both top-level and createMetric in request body",
+			req:         CreateMetricRequest{GoalID: "goal-abc", Name: "NPS", MetricType: "NUMERIC", StartValue: 0, TargetValue: 100, InitialValue: 10},
+			captureBody: true,
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"data":{"goals_createAndAddMetricTarget":{"success":true,"errors":[],"goal":{"metricTargets":{"edges":[{"node":{"id":"mt2","startValue":0,"targetValue":100,"snapshotValue":null,"metric":{"id":"m2","name":"NPS","type":"NUMERIC","archived":false,"latestValue":null}}}]}}}}}`))
+			},
+			wantID: "mt2",
+			bodyCheckFn: func(t *testing.T, body []byte) {
+				t.Helper()
+				s := string(body)
+				if !strings.Contains(s, "goal-abc") {
+					t.Errorf("body does not contain goalId %q; body: %s", "goal-abc", s)
+				}
+				// goalId must appear at least twice (top-level input + createMetric)
+				count := strings.Count(s, "goal-abc")
+				if count < 2 {
+					t.Errorf("goalId 'goal-abc' should appear ≥2 times in body, got %d; body: %s", count, s)
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var capturedBody []byte
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tc.captureBody {
+					capturedBody = mustReadBody(r.Body)
+				}
+				tc.handler(w, r)
+			}))
+			defer srv.Close()
+
+			svc := newTestService(srv.URL)
+			got, err := svc.CreateMetric(context.Background(), tc.req)
+
+			if tc.wantErrIs != nil {
+				if !errors.Is(err, tc.wantErrIs) {
+					t.Errorf("error: got %v, want %v", err, tc.wantErrIs)
+				}
+				return
+			}
+			if tc.wantErrMsg != "" {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tc.wantErrMsg) {
+					t.Errorf("error %q does not contain %q", err.Error(), tc.wantErrMsg)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got == nil {
+				t.Fatal("got nil MetricTarget, want non-nil")
+			}
+			if tc.wantID != "" && got.ID != tc.wantID {
+				t.Errorf("ID: got %q, want %q", got.ID, tc.wantID)
+			}
+			if tc.wantMetricName != "" && got.Metric.Name != tc.wantMetricName {
+				t.Errorf("Metric.Name: got %q, want %q", got.Metric.Name, tc.wantMetricName)
+			}
+			if tc.bodyCheckFn != nil {
+				tc.bodyCheckFn(t, capturedBody)
+			}
+		})
+	}
+}
+
+// --- TestUpdateMetricValue ---
+
+func TestUpdateMetricValue(t *testing.T) {
+	tests := []struct {
+		name        string
+		handler     func(w http.ResponseWriter, r *http.Request)
+		captureBody bool
+		req         UpdateMetricValueRequest
+		wantErrIs   error
+		wantErrMsg  string
+		wantID      string
+		wantValue   float64
+		bodyCheckFn func(t *testing.T, body []byte)
+	}{
+		{
+			name: "success - returns MetricValue with id/value/time",
+			req:  UpdateMetricValueRequest{MetricID: "m1", Value: 75},
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"data":{"goals_createMetricValue":{"success":true,"errors":[],"metricValue":{"id":"mv1","value":75,"time":"2024-01-15T00:00:00Z"}}}}`))
+			},
+			wantID:    "mv1",
+			wantValue: 75,
+		},
+		{
+			name:        "time empty - not in request body",
+			req:         UpdateMetricValueRequest{MetricID: "m1", Value: 10, Time: ""},
+			captureBody: true,
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"data":{"goals_createMetricValue":{"success":true,"errors":[],"metricValue":{"id":"mv2","value":10,"time":""}}}}`))
+			},
+			wantID: "mv2",
+			bodyCheckFn: func(t *testing.T, body []byte) {
+				t.Helper()
+				if strings.Contains(string(body), `"time"`) {
+					t.Errorf("body should NOT contain 'time' key when Time is empty; body: %s", string(body))
+				}
+			},
+		},
+		{
+			name:        "time provided - included in body",
+			req:         UpdateMetricValueRequest{MetricID: "m1", Value: 10, Time: "2024-01-15T00:00:00Z"},
+			captureBody: true,
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"data":{"goals_createMetricValue":{"success":true,"errors":[],"metricValue":{"id":"mv3","value":10,"time":"2024-01-15T00:00:00Z"}}}}`))
+			},
+			wantID: "mv3",
+			bodyCheckFn: func(t *testing.T, body []byte) {
+				t.Helper()
+				if !strings.Contains(string(body), "2024-01-15T00:00:00Z") {
+					t.Errorf("body should contain time value; body: %s", string(body))
+				}
+			},
+		},
+		{
+			name: "success:false with errors - returns error",
+			req:  UpdateMetricValueRequest{MetricID: "m1", Value: 10},
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"data":{"goals_createMetricValue":{"success":false,"errors":[{"message":"metric not found"}],"metricValue":null}}}`))
+			},
+			wantErrMsg: "metric not found",
+		},
+		{
+			name: "HTTP 401 - unauthorized",
+			req:  UpdateMetricValueRequest{MetricID: "m1", Value: 10},
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusUnauthorized)
+			},
+			wantErrIs: jira.ErrUnauthorized,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var capturedBody []byte
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tc.captureBody {
+					capturedBody = mustReadBody(r.Body)
+				}
+				tc.handler(w, r)
+			}))
+			defer srv.Close()
+
+			svc := newTestService(srv.URL)
+			got, err := svc.UpdateMetricValue(context.Background(), tc.req)
+
+			if tc.wantErrIs != nil {
+				if !errors.Is(err, tc.wantErrIs) {
+					t.Errorf("error: got %v, want %v", err, tc.wantErrIs)
+				}
+				return
+			}
+			if tc.wantErrMsg != "" {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tc.wantErrMsg) {
+					t.Errorf("error %q does not contain %q", err.Error(), tc.wantErrMsg)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got == nil {
+				t.Fatal("got nil MetricValue, want non-nil")
+			}
+			if tc.wantID != "" && got.ID != tc.wantID {
+				t.Errorf("ID: got %q, want %q", got.ID, tc.wantID)
+			}
+			if tc.wantValue != 0 && got.Value != tc.wantValue {
+				t.Errorf("Value: got %v, want %v", got.Value, tc.wantValue)
+			}
+			if tc.bodyCheckFn != nil {
+				tc.bodyCheckFn(t, capturedBody)
+			}
+		})
+	}
+}
+
+// --- TestUpdateMetricTarget ---
+
+func TestUpdateMetricTarget(t *testing.T) {
+	ptrFloat64 := func(f float64) *float64 { return &f }
+
+	tests := []struct {
+		name        string
+		handler     func(w http.ResponseWriter, r *http.Request)
+		captureBody bool
+		req         UpdateMetricTargetRequest
+		wantErr     bool
+		wantErrIs   error
+		wantErrMsg  string
+		bodyCheckFn func(t *testing.T, body []byte)
+	}{
+		{
+			name: "success - returns nil",
+			req:  UpdateMetricTargetRequest{MetricTargetID: "mt1"},
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"data":{"goals_editMetricTarget":{"success":true,"errors":[]}}}`))
+			},
+		},
+		{
+			name:        "nil optional fields - not in request body",
+			req:         UpdateMetricTargetRequest{MetricTargetID: "mt1"},
+			captureBody: true,
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"data":{"goals_editMetricTarget":{"success":true,"errors":[]}}}`))
+			},
+			bodyCheckFn: func(t *testing.T, body []byte) {
+				t.Helper()
+				s := string(body)
+				for _, key := range []string{"currentValue", "startValue", "targetValue"} {
+					if strings.Contains(s, `"`+key+`"`) {
+						t.Errorf("body should NOT contain %q when nil; body: %s", key, s)
+					}
+				}
+			},
+		},
+		{
+			name:        "all optional fields provided - all in request body",
+			req:         UpdateMetricTargetRequest{MetricTargetID: "mt1", CurrentValue: ptrFloat64(75), StartValue: ptrFloat64(0), TargetValue: ptrFloat64(100)},
+			captureBody: true,
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"data":{"goals_editMetricTarget":{"success":true,"errors":[]}}}`))
+			},
+			bodyCheckFn: func(t *testing.T, body []byte) {
+				t.Helper()
+				s := string(body)
+				for _, key := range []string{"currentValue", "startValue", "targetValue"} {
+					if !strings.Contains(s, `"`+key+`"`) {
+						t.Errorf("body should contain %q; body: %s", key, s)
+					}
+				}
+			},
+		},
+		{
+			name: "success:false with errors - returns error",
+			req:  UpdateMetricTargetRequest{MetricTargetID: "mt-bad"},
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"data":{"goals_editMetricTarget":{"success":false,"errors":[{"message":"target not found"}]}}}`))
+			},
+			wantErr:    true,
+			wantErrMsg: "target not found",
+		},
+		{
+			name: "HTTP 401 - unauthorized",
+			req:  UpdateMetricTargetRequest{MetricTargetID: "mt1"},
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusUnauthorized)
+			},
+			wantErrIs: jira.ErrUnauthorized,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var capturedBody []byte
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tc.captureBody {
+					capturedBody = mustReadBody(r.Body)
+				}
+				tc.handler(w, r)
+			}))
+			defer srv.Close()
+
+			svc := newTestService(srv.URL)
+			err := svc.UpdateMetricTarget(context.Background(), tc.req)
+
+			if tc.wantErrIs != nil {
+				if !errors.Is(err, tc.wantErrIs) {
+					t.Errorf("error: got %v, want %v", err, tc.wantErrIs)
+				}
+				return
+			}
+			if tc.wantErrMsg != "" {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tc.wantErrMsg) {
+					t.Errorf("error %q does not contain %q", err.Error(), tc.wantErrMsg)
+				}
+				return
+			}
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tc.bodyCheckFn != nil {
+				tc.bodyCheckFn(t, capturedBody)
+			}
+		})
+	}
+}
+
 // ptr helpers used in tests but not exported (avoid lint warning).
 var _ = func() *string { s := ""; return &s }
 var _ = errors.New

@@ -22,6 +22,10 @@ type GoalsService interface {
 	UpdateGoalStatus(ctx context.Context, req UpdateGoalStatusRequest) error
 	CreateGoal(ctx context.Context, req CreateGoalRequest) (*CreateGoalResult, error)
 	EditGoal(ctx context.Context, req EditGoalRequest) (*Goal, error)
+	GetGoalMetrics(ctx context.Context, goalID string) ([]MetricTarget, error)
+	CreateMetric(ctx context.Context, req CreateMetricRequest) (*MetricTarget, error)
+	UpdateMetricValue(ctx context.Context, req UpdateMetricValueRequest) (*MetricValue, error)
+	UpdateMetricTarget(ctx context.Context, req UpdateMetricTargetRequest) error
 }
 
 // GoalsGraphQLService implements GoalsService via the Atlassian platform GraphQL gateway.
@@ -302,6 +306,187 @@ func (s *GoalsGraphQLService) EditGoal(ctx context.Context, req EditGoalRequest)
 		TargetDate: data.GoalsEdit.Goal.TargetDate,
 	}
 	return g, nil
+}
+
+// GetGoalMetrics returns all MetricTargets attached to a goal.
+// Returns an empty slice (not an error) when the goal has no metrics or goals_byId is null.
+func (s *GoalsGraphQLService) GetGoalMetrics(ctx context.Context, goalID string) ([]MetricTarget, error) {
+	const query = `query GetGoalMetrics($goalId: ID!) {
+  goals_byId(goalId: $goalId) {
+    metricTargets {
+      edges {
+        node {
+          id startValue targetValue
+          snapshotValue { value time }
+          metric { id name type archived latestValue { id value time } }
+        }
+      }
+    }
+  }
+}`
+	variables := map[string]any{"goalId": goalID}
+
+	envelope, err := s.doGraphQL(ctx, query, variables)
+	if err != nil {
+		return nil, err
+	}
+	if msg := firstGraphQLError(envelope.Errors); msg != "" {
+		return nil, fmt.Errorf("goals: GraphQL error: %s", msg)
+	}
+
+	var data goalsGetMetricsData
+	if err := json.Unmarshal(envelope.Data, &data); err != nil {
+		return nil, fmt.Errorf("goals: decoding metricTargets: %w", err)
+	}
+	if data.GoalsByID == nil {
+		return []MetricTarget{}, nil
+	}
+
+	edges := data.GoalsByID.MetricTargets.Edges
+	result := make([]MetricTarget, len(edges))
+	for i, edge := range edges {
+		result[i] = edge.Node.toMetricTarget()
+	}
+	return result, nil
+}
+
+// CreateMetric creates a new metric and attaches it to the given goal in one GraphQL mutation.
+// Returns the newly created MetricTarget from the goal's updated metricTargets list.
+func (s *GoalsGraphQLService) CreateMetric(ctx context.Context, req CreateMetricRequest) (*MetricTarget, error) {
+	const mutationQuery = `mutation CreateMetric($input: TownsquareGoalsCreateAddMetricTargetInput!) {
+  goals_createAndAddMetricTarget(input: $input) {
+    success
+    errors { message }
+    goal {
+      metricTargets {
+        edges { node { id startValue targetValue metric { id name type archived } } }
+      }
+    }
+  }
+}`
+	input := createAndAddMetricTargetInput{
+		GoalID:      req.GoalID,
+		StartValue:  req.StartValue,
+		TargetValue: req.TargetValue,
+		CreateMetric: createMetricInlineInput{
+			GoalID: req.GoalID,
+			Name:   req.Name,
+			Type:   req.MetricType,
+			Value:  req.InitialValue,
+		},
+	}
+	variables := map[string]any{"input": input}
+
+	envelope, err := s.doGraphQL(ctx, mutationQuery, variables)
+	if err != nil {
+		return nil, err
+	}
+	if msg := firstGraphQLError(envelope.Errors); msg != "" {
+		return nil, fmt.Errorf("goals: GraphQL error: %s", msg)
+	}
+
+	var data createAndAddMetricResponseData
+	if err := json.Unmarshal(envelope.Data, &data); err != nil {
+		return nil, fmt.Errorf("goals: decoding createAndAddMetricTarget: %w", err)
+	}
+	payload := data.GoalsCreateAndAddMetricTarget
+	if !payload.Success {
+		if len(payload.Errors) > 0 {
+			return nil, fmt.Errorf("%s", payload.Errors[0].Message)
+		}
+		return nil, fmt.Errorf("goals: createMetric failed with no error detail")
+	}
+	if payload.Goal == nil || len(payload.Goal.MetricTargets.Edges) == 0 {
+		return nil, fmt.Errorf("goals: createMetric returned no metric targets")
+	}
+	edges := payload.Goal.MetricTargets.Edges
+	mt := edges[len(edges)-1].Node.toMetricTarget()
+	return &mt, nil
+}
+
+// UpdateMetricValue adds a new value datapoint to an existing metric.
+// Returns the created MetricValue with its ID, value, and timestamp.
+func (s *GoalsGraphQLService) UpdateMetricValue(ctx context.Context, req UpdateMetricValueRequest) (*MetricValue, error) {
+	const mutationQuery = `mutation UpdateMetricValue($input: TownsquareGoalsCreateMetricValueInput!) {
+  goals_createMetricValue(input: $input) {
+    success
+    errors { message }
+    metricValue { id value time }
+  }
+}`
+	input := createMetricValueInput{
+		MetricID: req.MetricID,
+		Value:    req.Value,
+		Time:     req.Time,
+	}
+	variables := map[string]any{"input": input}
+
+	envelope, err := s.doGraphQL(ctx, mutationQuery, variables)
+	if err != nil {
+		return nil, err
+	}
+	if msg := firstGraphQLError(envelope.Errors); msg != "" {
+		return nil, fmt.Errorf("goals: GraphQL error: %s", msg)
+	}
+
+	var data createMetricValueResponseData
+	if err := json.Unmarshal(envelope.Data, &data); err != nil {
+		return nil, fmt.Errorf("goals: decoding createMetricValue: %w", err)
+	}
+	payload := data.GoalsCreateMetricValue
+	if !payload.Success {
+		if len(payload.Errors) > 0 {
+			return nil, fmt.Errorf("%s", payload.Errors[0].Message)
+		}
+		return nil, fmt.Errorf("goals: updateMetricValue failed with no error detail")
+	}
+	if payload.MetricValue == nil {
+		return nil, fmt.Errorf("goals: updateMetricValue returned nil metricValue")
+	}
+	return &MetricValue{
+		ID:    payload.MetricValue.ID,
+		Value: payload.MetricValue.Value,
+		Time:  payload.MetricValue.Time,
+	}, nil
+}
+
+// UpdateMetricTarget updates the start, current, and/or target values of a MetricTarget.
+// Only non-nil fields in the request are sent to the API.
+func (s *GoalsGraphQLService) UpdateMetricTarget(ctx context.Context, req UpdateMetricTargetRequest) error {
+	const mutationQuery = `mutation UpdateMetricTarget($input: TownsquareGoalsEditMetricTargetInput!) {
+  goals_editMetricTarget(input: $input) {
+    success
+    errors { message }
+  }
+}`
+	input := editMetricTargetInput{
+		MetricTargetID: req.MetricTargetID,
+		CurrentValue:   req.CurrentValue,
+		StartValue:     req.StartValue,
+		TargetValue:    req.TargetValue,
+	}
+	variables := map[string]any{"input": input}
+
+	envelope, err := s.doGraphQL(ctx, mutationQuery, variables)
+	if err != nil {
+		return err
+	}
+	if msg := firstGraphQLError(envelope.Errors); msg != "" {
+		return fmt.Errorf("goals: GraphQL error: %s", msg)
+	}
+
+	var data editMetricTargetResponseData
+	if err := json.Unmarshal(envelope.Data, &data); err != nil {
+		return fmt.Errorf("goals: decoding editMetricTarget: %w", err)
+	}
+	payload := data.GoalsEditMetricTarget
+	if !payload.Success {
+		if len(payload.Errors) > 0 {
+			return fmt.Errorf("%s", payload.Errors[0].Message)
+		}
+		return fmt.Errorf("goals: updateMetricTarget failed with no error detail")
+	}
+	return nil
 }
 
 // UpdateGoalStatus posts a check-in update to a goal with new status, optional score, optional summary.

@@ -24,4 +24,8 @@ func RegisterCommands(root *cobra.Command, svc goals.GoalsService, auditLog audi
 	root.AddCommand(NewCreateCmd(svc, auditLog, dryRun))
 	root.AddCommand(NewUpdateCmd(svc, auditLog, dryRun))
 	root.AddCommand(NewEditCmd(svc, auditLog, dryRun))
+	root.AddCommand(NewMetricsCmd(svc))
+	root.AddCommand(NewMetricCreateCmd(svc, auditLog, dryRun))
+	root.AddCommand(NewMetricValueCmd(svc, auditLog, dryRun))
+	root.AddCommand(NewMetricTargetCmd(svc, auditLog, dryRun))
 }
