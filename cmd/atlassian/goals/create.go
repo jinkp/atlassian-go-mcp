@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/goals"
 	"github.com/spf13/cobra"
 )
 
 // NewCreateCmd returns the "create --site-id --name --type-id --target-date [opts]" command.
-func NewCreateCmd(svc goals.GoalsService) *cobra.Command {
+func NewCreateCmd(svc goals.GoalsService, auditLog audit.Logger, dryRun bool) *cobra.Command {
 	var (
 		siteID      string
 		name        string
@@ -26,6 +27,10 @@ func NewCreateCmd(svc goals.GoalsService) *cobra.Command {
 		Long: `Create a new Goal for a site. Requires the goal type ID (an ARI) which can be
 obtained from your Atlassian admin or workspace settings.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRun {
+				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would create goal: site-id=%s name=%q target-date=%s\n", siteID, name, targetDate)
+				return nil
+			}
 			req := goals.CreateGoalRequest{
 				SiteID:      siteID,
 				Name:        name,
@@ -36,10 +41,12 @@ obtained from your Atlassian admin or workspace settings.`,
 			}
 
 			result, err := svc.CreateGoal(context.Background(), req)
-			if err != nil {
-				fmt.Fprintln(os.Stderr, "error:", err)
-				os.Exit(goalsExitCode(err))
-			}
+		auditLog.Log(audit.NewEntry("create_goal", "goals",
+			map[string]any{"site_id": siteID, "name": name}, err))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(goalsExitCode(err))
+		}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Created goal: %s %s\n", result.ID, result.Name)
 			return nil

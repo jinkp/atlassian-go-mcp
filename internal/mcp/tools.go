@@ -10,6 +10,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	jira "github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
 )
 
@@ -103,7 +104,7 @@ type transitionJSON struct {
 
 // ToolCreateJiraIssue returns an MCP tool handler that wraps jira.Service.CreateIssue.
 // All errors are returned as mcp.NewToolResultError — never as Go errors.
-func ToolCreateJiraIssue(svc jira.Service) server.ToolHandlerFunc {
+func ToolCreateJiraIssue(svc jira.Service, log audit.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		if err := WriteGuardCheck(); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
@@ -143,6 +144,8 @@ func ToolCreateJiraIssue(svc jira.Service) server.ToolHandlerFunc {
 		}
 
 		resp, svcErr := svc.CreateIssue(ctx, createReq)
+		log.Log(audit.NewEntry("create_jira_issue", "jira",
+			map[string]any{"project_key": projectKey, "issue_type": issueType, "summary": summary}, svcErr))
 		if svcErr != nil {
 			return mcp.NewToolResultError(svcErr.Error()), nil
 		}
@@ -157,7 +160,7 @@ func ToolCreateJiraIssue(svc jira.Service) server.ToolHandlerFunc {
 
 // ToolUpdateJiraIssue returns an MCP tool handler that wraps jira.Service.UpdateIssue.
 // All errors are returned as mcp.NewToolResultError — never as Go errors.
-func ToolUpdateJiraIssue(svc jira.Service) server.ToolHandlerFunc {
+func ToolUpdateJiraIssue(svc jira.Service, log audit.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		if err := WriteGuardCheck(); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
@@ -183,7 +186,10 @@ func ToolUpdateJiraIssue(svc jira.Service) server.ToolHandlerFunc {
 			updateReq.PriorityName = &p
 		}
 
-		if svcErr := svc.UpdateIssue(ctx, issueKey, updateReq); svcErr != nil {
+		svcErr := svc.UpdateIssue(ctx, issueKey, updateReq)
+		log.Log(audit.NewEntry("update_jira_issue", "jira",
+			map[string]any{"issue_key": issueKey}, svcErr))
+		if svcErr != nil {
 			return mcp.NewToolResultError(svcErr.Error()), nil
 		}
 
@@ -229,7 +235,7 @@ func ToolGetJiraTransitions(svc jira.Service) server.ToolHandlerFunc {
 
 // ToolTransitionJiraIssue returns an MCP tool handler that wraps jira.Service.TransitionIssue.
 // All errors are returned as mcp.NewToolResultError — never as Go errors.
-func ToolTransitionJiraIssue(svc jira.Service) server.ToolHandlerFunc {
+func ToolTransitionJiraIssue(svc jira.Service, log audit.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		if err := WriteGuardCheck(); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
@@ -244,7 +250,10 @@ func ToolTransitionJiraIssue(svc jira.Service) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(fmt.Sprintf("transition_id is required: %v", err)), nil
 		}
 
-		if svcErr := svc.TransitionIssue(ctx, issueKey, transitionID); svcErr != nil {
+		svcErr := svc.TransitionIssue(ctx, issueKey, transitionID)
+		log.Log(audit.NewEntry("transition_jira_issue", "jira",
+			map[string]any{"issue_key": issueKey, "transition_id": transitionID}, svcErr))
+		if svcErr != nil {
 			return mcp.NewToolResultError(svcErr.Error()), nil
 		}
 

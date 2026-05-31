@@ -2,6 +2,7 @@
 package agile
 
 import (
+	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/agile"
 	"github.com/spf13/cobra"
 )
@@ -16,7 +17,7 @@ func NewAgileCmd() *cobra.Command {
 }
 
 // RegisterCommands attaches all agile sub-commands to root.
-func RegisterCommands(root *cobra.Command, svc agile.AgileService) {
+func RegisterCommands(root *cobra.Command, svc agile.AgileService, auditLog audit.Logger, dryRun bool) {
 	root.AddCommand(NewBoardsCmd(svc))
 	root.AddCommand(NewSprintsCmd(svc))
 
@@ -27,10 +28,10 @@ func RegisterCommands(root *cobra.Command, svc agile.AgileService) {
 	}
 	sprintGroup.AddCommand(NewSprintActiveCmd(svc))
 	sprintGroup.AddCommand(NewSprintIssuesCmd(svc))
-	sprintGroup.AddCommand(NewSprintCreateCmd(svc))
-	sprintGroup.AddCommand(NewSprintUpdateCmd(svc))
+	sprintGroup.AddCommand(NewSprintCreateCmd(svc, auditLog, dryRun))
+	sprintGroup.AddCommand(NewSprintUpdateCmd(svc, auditLog, dryRun))
 	root.AddCommand(sprintGroup)
 
-	root.AddCommand(NewMoveToSprintCmd(svc))
-	root.AddCommand(NewMoveToEpicCmd(svc))
+	root.AddCommand(NewMoveToSprintCmd(svc, auditLog, dryRun))
+	root.AddCommand(NewMoveToEpicCmd(svc, auditLog, dryRun))
 }

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/goals"
 	mcpserver "github.com/jinkp/atlassian-go-mcp/internal/mcp"
 )
@@ -18,6 +19,7 @@ type mockGoalsService struct {
 	searchGoalsFunc      func(ctx context.Context, req goals.SearchGoalsRequest) (*goals.GoalSearchResult, error)
 	updateGoalStatusFunc func(ctx context.Context, req goals.UpdateGoalStatusRequest) error
 	createGoalFunc       func(ctx context.Context, req goals.CreateGoalRequest) (*goals.CreateGoalResult, error)
+	editGoalFunc         func(ctx context.Context, req goals.EditGoalRequest) (*goals.Goal, error)
 }
 
 func (m *mockGoalsService) GetSiteID(ctx context.Context, subdomain string) (string, error) {
@@ -53,6 +55,88 @@ func (m *mockGoalsService) CreateGoal(ctx context.Context, req goals.CreateGoalR
 		return m.createGoalFunc(ctx, req)
 	}
 	return &goals.CreateGoalResult{}, nil
+}
+
+func (m *mockGoalsService) EditGoal(ctx context.Context, req goals.EditGoalRequest) (*goals.Goal, error) {
+	if m.editGoalFunc != nil {
+		return m.editGoalFunc(ctx, req)
+	}
+	return &goals.Goal{}, nil
+}
+
+// --- TestToolEditGoal ---
+
+func TestToolEditGoal(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        map[string]any
+		envWrite    string
+		mockFn      func(ctx context.Context, req goals.EditGoalRequest) (*goals.Goal, error)
+		wantIsError bool
+		wantContain string
+	}{
+		{
+			name:        "ENABLE_WRITE unset - blocked",
+			args:        map[string]any{"goal_id": "ari:cloud:townsquare:abc:goal/g1"},
+			envWrite:    "",
+			mockFn:      nil,
+			wantIsError: true,
+			wantContain: "write operations disabled",
+		},
+		{
+			name:        "missing goal_id - returns error",
+			args:        map[string]any{},
+			envWrite:    "true",
+			mockFn:      nil,
+			wantIsError: true,
+			wantContain: "goal_id",
+		},
+		{
+			name:     "success - returns Goal JSON",
+			args:     map[string]any{"goal_id": "ari:cloud:townsquare:abc:goal/g1", "name": "New Name"},
+			envWrite: "true",
+			mockFn: func(ctx context.Context, req goals.EditGoalRequest) (*goals.Goal, error) {
+				return &goals.Goal{ID: "ari:cloud:townsquare:abc:goal/g1", Name: "New Name"}, nil
+			},
+			wantIsError: false,
+			wantContain: "New Name",
+		},
+		{
+			name:     "service error - forwarded",
+			args:     map[string]any{"goal_id": "ari:cloud:townsquare:abc:goal/bad"},
+			envWrite: "true",
+			mockFn: func(ctx context.Context, req goals.EditGoalRequest) (*goals.Goal, error) {
+				return nil, errors.New("Goal not found")
+			},
+			wantIsError: true,
+			wantContain: "Goal not found",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.envWrite == "" {
+				t.Setenv("ENABLE_WRITE", "")
+			} else {
+				t.Setenv("ENABLE_WRITE", tc.envWrite)
+			}
+
+			svc := &mockGoalsService{editGoalFunc: tc.mockFn}
+			handler := mcpserver.ToolEditGoal(svc, audit.NewNoopLogger())
+			req := makeCallToolRequest(tc.args)
+			result, err := handler(context.Background(), req)
+			if err != nil {
+				t.Fatalf("handler returned Go error (must never happen): %v", err)
+			}
+			if result.IsError != tc.wantIsError {
+				t.Errorf("IsError: got %v, want %v (text: %s)", result.IsError, tc.wantIsError, getResultText(t, result))
+			}
+			text := getResultText(t, result)
+			if !strings.Contains(strings.ToLower(text), strings.ToLower(tc.wantContain)) {
+				t.Errorf("result text %q does not contain %q", text, tc.wantContain)
+			}
+		})
+	}
 }
 
 // --- TestToolCreateGoal ---
@@ -127,7 +211,7 @@ func TestToolCreateGoal(t *testing.T) {
 			}
 
 			svc := &mockGoalsService{createGoalFunc: tc.mockFn}
-			handler := mcpserver.ToolCreateGoal(svc)
+			handler := mcpserver.ToolCreateGoal(svc, audit.NewNoopLogger())
 			req := makeCallToolRequest(tc.args)
 			result, err := handler(context.Background(), req)
 			if err != nil {
@@ -439,7 +523,7 @@ func TestToolUpdateGoalStatus(t *testing.T) {
 			}
 
 			svc := &mockGoalsService{updateGoalStatusFunc: tc.mockFn}
-			handler := mcpserver.ToolUpdateGoalStatus(svc)
+			handler := mcpserver.ToolUpdateGoalStatus(svc, audit.NewNoopLogger())
 			req := makeCallToolRequest(tc.args)
 			result, err := handler(context.Background(), req)
 			if err != nil {

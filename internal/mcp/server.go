@@ -8,10 +8,14 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/agile"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/client"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/goals"
 	jira "github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
+	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/projects"
+	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/releases"
+	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/teams"
 )
 
 // ConfigFromEnv reads the three required Atlassian env vars and returns a client.Config.
@@ -47,8 +51,10 @@ func WriteGuardCheck() error {
 }
 
 // NewAtlassianServer creates a configured MCPServer with all Jira read/write tools,
-// all Jira Agile tools, and all Atlassian Goals tools registered.
-func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc goals.GoalsService) *server.MCPServer {
+// all Jira Agile tools, all Atlassian Goals tools, all Releases tools, all Projects tools,
+// and all Teams tools registered.
+// log receives an entry for every write operation (after WriteGuardCheck passes).
+func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc goals.GoalsService, releasesSvc releases.ReleasesService, projectsSvc projects.ProjectsService, teamsSvc teams.TeamsService, log audit.Logger) *server.MCPServer {
 	s := server.NewMCPServer(
 		"atlassian",
 		"1.0.0",
@@ -121,7 +127,7 @@ func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc 
 				mcp.Description("Comma-separated list of labels, e.g. 'backend,urgent'"),
 			),
 		),
-		ToolCreateJiraIssue(svc),
+		ToolCreateJiraIssue(svc, log),
 	)
 
 	s.AddTool(
@@ -150,7 +156,7 @@ func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc 
 				mcp.Description("New priority name"),
 			),
 		),
-		ToolUpdateJiraIssue(svc),
+		ToolUpdateJiraIssue(svc, log),
 	)
 
 	s.AddTool(
@@ -181,7 +187,7 @@ func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc 
 				mcp.Description("Transition ID from get_jira_transitions"),
 			),
 		),
-		ToolTransitionJiraIssue(svc),
+		ToolTransitionJiraIssue(svc, log),
 	)
 
 	s.AddTool(
@@ -295,7 +301,7 @@ func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc 
 				mcp.Description("End date ISO 8601: 2024-01-29T00:00:00.000Z"),
 			),
 		),
-		ToolUpdateSprint(agileSvc),
+		ToolUpdateSprint(agileSvc, log),
 	)
 
 	s.AddTool(
@@ -313,7 +319,7 @@ func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc 
 				mcp.Description("Comma-separated issue keys: 'PROJ-1,PROJ-2'"),
 			),
 		),
-		ToolMoveIssuesToSprint(agileSvc),
+		ToolMoveIssuesToSprint(agileSvc, log),
 	)
 
 	s.AddTool(
@@ -331,7 +337,7 @@ func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc 
 				mcp.Description("Comma-separated issue keys: 'PROJ-1,PROJ-2'"),
 			),
 		),
-		ToolMoveIssuesToEpic(agileSvc),
+		ToolMoveIssuesToEpic(agileSvc, log),
 	)
 
 	s.AddTool(
@@ -357,7 +363,7 @@ func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc 
 				mcp.Description("Sprint end date ISO 8601: 2024-01-29T00:00:00.000Z"),
 			),
 		),
-		ToolCreateSprint(agileSvc),
+		ToolCreateSprint(agileSvc, log),
 	)
 
 	s.AddTool(
@@ -434,7 +440,7 @@ func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc 
 				mcp.Description("Plain text update summary (optional)"),
 			),
 		),
-		ToolUpdateGoalStatus(goalsSvc),
+		ToolUpdateGoalStatus(goalsSvc, log),
 	)
 
 	s.AddTool(
@@ -470,16 +476,260 @@ func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc 
 				mcp.Description("Optional plain text description (wrapped to ADF internally)"),
 			),
 		),
-		ToolCreateGoal(goalsSvc),
+		ToolCreateGoal(goalsSvc, log),
+	)
+
+	s.AddTool(
+		mcp.NewTool(
+			"search_releases",
+			mcp.WithDescription("List all Jira releases (versions) for a project"),
+			mcp.WithString(
+				"project_key",
+				mcp.Required(),
+				mcp.Description("Project key, e.g. PROJ"),
+			),
+		),
+		ToolSearchReleases(releasesSvc),
+	)
+
+	s.AddTool(
+		mcp.NewTool(
+			"get_release",
+			mcp.WithDescription("Get a Jira release (version) by its ID"),
+			mcp.WithString(
+				"release_id",
+				mcp.Required(),
+				mcp.Description("Release ID, e.g. 10001"),
+			),
+		),
+		ToolGetRelease(releasesSvc),
+	)
+
+	s.AddTool(
+		mcp.NewTool(
+			"get_release_issues",
+			mcp.WithDescription("Get issue counts for a Jira release (fix version and affects version)"),
+			mcp.WithString(
+				"release_id",
+				mcp.Required(),
+				mcp.Description("Release ID, e.g. 10001"),
+			),
+		),
+		ToolGetReleaseIssues(releasesSvc),
+	)
+
+	s.AddTool(
+		mcp.NewTool(
+			"create_release",
+			mcp.WithDescription("Create a new Jira release (version). Requires ENABLE_WRITE=true."),
+			mcp.WithString(
+				"project_id",
+				mcp.Required(),
+				mcp.Description("Project ID (numeric string), e.g. '10000'"),
+			),
+			mcp.WithString(
+				"name",
+				mcp.Required(),
+				mcp.Description("Release name, e.g. 'v1.0.0'"),
+			),
+			mcp.WithString(
+				"description",
+				mcp.Description("Release description (optional)"),
+			),
+			mcp.WithString(
+				"start_date",
+				mcp.Description("Start date YYYY-MM-DD (optional)"),
+			),
+			mcp.WithString(
+				"release_date",
+				mcp.Description("Release date YYYY-MM-DD (optional)"),
+			),
+		),
+		ToolCreateRelease(releasesSvc, log),
+	)
+
+	s.AddTool(
+		mcp.NewTool(
+			"update_release",
+			mcp.WithDescription("Update a Jira release (version). Requires ENABLE_WRITE=true."),
+			mcp.WithString(
+				"release_id",
+				mcp.Required(),
+				mcp.Description("Release ID, e.g. 10001"),
+			),
+			mcp.WithString(
+				"name",
+				mcp.Description("New release name (optional)"),
+			),
+			mcp.WithString(
+				"description",
+				mcp.Description("New description (optional)"),
+			),
+			mcp.WithString(
+				"released",
+				mcp.Description("Mark as released: 'true' or 'false' (optional)"),
+			),
+			mcp.WithString(
+				"archived",
+				mcp.Description("Archive the release: 'true' or 'false' (optional)"),
+			),
+			mcp.WithString(
+				"release_date",
+				mcp.Description("New release date YYYY-MM-DD (optional)"),
+			),
+		),
+		ToolUpdateRelease(releasesSvc, log),
+	)
+
+	s.AddTool(
+		mcp.NewTool(
+			"list_projects",
+			mcp.WithDescription("List all Jira projects"),
+			mcp.WithNumber(
+				"max_results",
+				mcp.Description("Maximum number of projects to return (default 50)"),
+			),
+		),
+		ToolListProjects(projectsSvc),
+	)
+
+	s.AddTool(
+		mcp.NewTool(
+			"get_project",
+			mcp.WithDescription("Get a Jira project by key or ID"),
+			mcp.WithString(
+				"project_key",
+				mcp.Required(),
+				mcp.Description("Project key or ID, e.g. PROJ or 10000"),
+			),
+		),
+		ToolGetProject(projectsSvc),
+	)
+
+	s.AddTool(
+		mcp.NewTool(
+			"search_projects",
+			mcp.WithDescription("Search Jira projects by name or key"),
+			mcp.WithString(
+				"query",
+				mcp.Description("Search query (optional — omit to list all)"),
+			),
+			mcp.WithNumber(
+				"max_results",
+				mcp.Description("Maximum number of results to return (default 50)"),
+			),
+		),
+		ToolSearchProjects(projectsSvc),
+	)
+
+	s.AddTool(
+		mcp.NewTool(
+			"update_project",
+			mcp.WithDescription("Update a Jira project. Requires ENABLE_WRITE=true."),
+			mcp.WithString(
+				"project_key",
+				mcp.Required(),
+				mcp.Description("Project key or ID, e.g. PROJ"),
+			),
+			mcp.WithString(
+				"name",
+				mcp.Description("New project name (optional)"),
+			),
+			mcp.WithString(
+				"description",
+				mcp.Description("New project description (optional)"),
+			),
+			mcp.WithString(
+				"lead",
+				mcp.Description("New lead account ID (optional)"),
+			),
+		),
+		ToolUpdateProject(projectsSvc, log),
+	)
+
+	s.AddTool(
+		mcp.NewTool(
+			"edit_goal",
+			mcp.WithDescription("Edit structural fields of an Atlassian Goal (name, targetDate, isArchived). Requires ENABLE_WRITE=true."),
+			mcp.WithString(
+				"goal_id",
+				mcp.Required(),
+				mcp.Description("Goal ARI, e.g. ari:cloud:townsquare:{siteId}:goal/{uuid}"),
+			),
+			mcp.WithString(
+				"name",
+				mcp.Description("New goal name (optional)"),
+			),
+			mcp.WithString(
+				"target_date",
+				mcp.Description("New target date YYYY-MM-DD (optional)"),
+			),
+			mcp.WithString(
+				"confidence",
+				mcp.Description("Date confidence: QUARTER (default), DAY, WEEK, MONTH, YEAR (optional, only used when target_date is set)"),
+			),
+			mcp.WithString(
+				"archive",
+				mcp.Description("Archive or unarchive: 'true' to archive, 'false' to unarchive (optional)"),
+			),
+		),
+		ToolEditGoal(goalsSvc, log),
+	)
+
+	s.AddTool(
+		mcp.NewTool(
+			"search_teams",
+			mcp.WithDescription("List or search Atlassian teams in the organization"),
+			mcp.WithString(
+				"query",
+				mcp.Description("Optional search query to filter teams by name"),
+			),
+			mcp.WithNumber(
+				"max_results",
+				mcp.Description("Maximum number of teams to return (default 50)"),
+			),
+		),
+		ToolSearchTeams(teamsSvc),
+	)
+
+	s.AddTool(
+		mcp.NewTool(
+			"get_team",
+			mcp.WithDescription("Get an Atlassian team by its ID"),
+			mcp.WithString(
+				"team_id",
+				mcp.Required(),
+				mcp.Description("Team ID (UUID)"),
+			),
+		),
+		ToolGetTeam(teamsSvc),
+	)
+
+	s.AddTool(
+		mcp.NewTool(
+			"get_team_members",
+			mcp.WithDescription("List members of an Atlassian team"),
+			mcp.WithString(
+				"team_id",
+				mcp.Required(),
+				mcp.Description("Team ID (UUID)"),
+			),
+			mcp.WithNumber(
+				"max_results",
+				mcp.Description("Maximum number of members to return (default 50)"),
+			),
+		),
+		ToolGetTeamMembers(teamsSvc),
 	)
 
 	return s
 }
 
-// StartServer wires jira.Service, agile.AgileService, and goals.GoalsService into the MCP server
-// and starts the stdio loop. Blocks until the server exits. Call from cmd/mcp after
-// setting log.SetOutput(os.Stderr) to guarantee stdout discipline.
-func StartServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc goals.GoalsService) error {
-	s := NewAtlassianServer(svc, agileSvc, goalsSvc)
+// StartServer wires jira.Service, agile.AgileService, goals.GoalsService, releases.ReleasesService,
+// projects.ProjectsService, teams.TeamsService, and an audit.Logger into the MCP server and starts
+// the stdio loop. Blocks until the server exits. Call from cmd/mcp after setting log.SetOutput(os.Stderr)
+// to guarantee stdout discipline.
+func StartServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc goals.GoalsService, releasesSvc releases.ReleasesService, projectsSvc projects.ProjectsService, teamsSvc teams.TeamsService, auditLog audit.Logger) error {
+	s := NewAtlassianServer(svc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, auditLog)
 	return server.ServeStdio(s)
 }

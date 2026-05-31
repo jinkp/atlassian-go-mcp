@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/agile"
 	"github.com/spf13/cobra"
 )
 
 // NewSprintCreateCmd returns the "sprint create --board-id --name [--start --end]" command.
-func NewSprintCreateCmd(svc agile.AgileService) *cobra.Command {
+func NewSprintCreateCmd(svc agile.AgileService, auditLog audit.Logger, dryRun bool) *cobra.Command {
 	var (
 		boardID   int
 		name      string
@@ -22,6 +23,10 @@ func NewSprintCreateCmd(svc agile.AgileService) *cobra.Command {
 		Use:   "create",
 		Short: "Create a new sprint on a board",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRun {
+				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would create sprint: board-id=%d name=%q\n", boardID, name)
+				return nil
+			}
 			req := agile.CreateSprintRequest{
 				Name:      name,
 				BoardID:   boardID,
@@ -30,10 +35,12 @@ func NewSprintCreateCmd(svc agile.AgileService) *cobra.Command {
 			}
 
 			sprint, err := svc.CreateSprint(context.Background(), req)
-			if err != nil {
-				fmt.Fprintln(os.Stderr, "error:", err)
-				os.Exit(agileExitCode(err))
-			}
+		auditLog.Log(audit.NewEntry("create_sprint", "agile",
+			map[string]any{"name": name, "board_id": boardID}, err))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(agileExitCode(err))
+		}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Created sprint: %d %s\n", sprint.ID, sprint.Name)
 			return nil

@@ -251,6 +251,80 @@ func TestRetryTransport_StopsAfterMaxRetries(t *testing.T) {
 	}
 }
 
+// --- IdempotencyTransport tests ---
+
+func TestIdempotencyTransport_POSTGetsKey(t *testing.T) {
+	var gotKey string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotKey = r.Header.Get("Idempotency-Key")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	transport := &client.IdempotencyTransport{Transport: http.DefaultTransport}
+	req, _ := http.NewRequest(http.MethodPost, srv.URL, nil)
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip() unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if gotKey == "" {
+		t.Error("expected non-empty Idempotency-Key header on POST, got empty")
+	}
+}
+
+func TestIdempotencyTransport_GETNoKey(t *testing.T) {
+	var gotKey string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotKey = r.Header.Get("Idempotency-Key")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	transport := &client.IdempotencyTransport{Transport: http.DefaultTransport}
+	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip() unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if gotKey != "" {
+		t.Errorf("expected NO Idempotency-Key header on GET, got %q", gotKey)
+	}
+}
+
+func TestIdempotencyTransport_TwoPOSTsDistinctKeys(t *testing.T) {
+	keys := make([]string, 0, 2)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		keys = append(keys, r.Header.Get("Idempotency-Key"))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	transport := &client.IdempotencyTransport{Transport: http.DefaultTransport}
+
+	for i := 0; i < 2; i++ {
+		req, _ := http.NewRequest(http.MethodPost, srv.URL, nil)
+		resp, err := transport.RoundTrip(req)
+		if err != nil {
+			t.Fatalf("RoundTrip() call %d unexpected error: %v", i, err)
+		}
+		resp.Body.Close()
+	}
+
+	if len(keys) != 2 {
+		t.Fatalf("expected 2 keys, got %d", len(keys))
+	}
+	if keys[0] == "" || keys[1] == "" {
+		t.Error("expected both keys to be non-empty")
+	}
+	if keys[0] == keys[1] {
+		t.Errorf("expected distinct keys for distinct requests, got same: %q", keys[0])
+	}
+}
+
 func TestRetryTransport_ExponentialBackoff(t *testing.T) {
 	// We verify the delay pattern: each call should be delayed longer.
 	// Use timestamps from the server side to measure actual delays.

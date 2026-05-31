@@ -6,9 +6,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/agile"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/goals"
 	mcpserver "github.com/jinkp/atlassian-go-mcp/internal/mcp"
+	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/projects"
+	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/releases"
+	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/teams"
 )
 
 // --- TestConfigFromEnv ---
@@ -195,6 +199,67 @@ func (m *mockServerGoalsService) CreateGoal(ctx context.Context, req goals.Creat
 	return &goals.CreateGoalResult{}, nil
 }
 
+func (m *mockServerGoalsService) EditGoal(_ context.Context, _ goals.EditGoalRequest) (*goals.Goal, error) {
+	return &goals.Goal{}, nil
+}
+
+// mockServerReleasesService is a minimal releases.ReleasesService for server construction tests.
+type mockServerReleasesService struct{}
+
+func (m *mockServerReleasesService) GetReleases(_ context.Context, _ string) ([]releases.Release, error) {
+	return []releases.Release{}, nil
+}
+
+func (m *mockServerReleasesService) GetRelease(_ context.Context, _ string) (*releases.Release, error) {
+	return &releases.Release{}, nil
+}
+
+func (m *mockServerReleasesService) GetReleaseIssueCounts(_ context.Context, _ string) (*releases.ReleaseIssueCounts, error) {
+	return &releases.ReleaseIssueCounts{}, nil
+}
+
+func (m *mockServerReleasesService) CreateRelease(_ context.Context, _ releases.CreateReleaseRequest) (*releases.Release, error) {
+	return &releases.Release{}, nil
+}
+
+func (m *mockServerReleasesService) UpdateRelease(_ context.Context, _ string, _ releases.UpdateReleaseRequest) (*releases.Release, error) {
+	return &releases.Release{}, nil
+}
+
+// mockServerProjectsService is a minimal projects.ProjectsService for server construction tests.
+type mockServerProjectsService struct{}
+
+func (m *mockServerProjectsService) GetProjects(_ context.Context, _ int) ([]projects.Project, error) {
+	return []projects.Project{}, nil
+}
+
+func (m *mockServerProjectsService) GetProject(_ context.Context, _ string) (*projects.Project, error) {
+	return &projects.Project{}, nil
+}
+
+func (m *mockServerProjectsService) SearchProjects(_ context.Context, _ projects.SearchProjectsRequest) (*projects.SearchProjectsResult, error) {
+	return &projects.SearchProjectsResult{Projects: []projects.Project{}}, nil
+}
+
+func (m *mockServerProjectsService) UpdateProject(_ context.Context, _ string, _ projects.UpdateProjectRequest) (*projects.Project, error) {
+	return &projects.Project{}, nil
+}
+
+// mockServerTeamsService is a minimal teams.TeamsService for server construction tests.
+type mockServerTeamsService struct{}
+
+func (m *mockServerTeamsService) GetTeams(_ context.Context, _ string, _ int) (*teams.TeamSearchResult, error) {
+	return &teams.TeamSearchResult{Teams: []teams.Team{}}, nil
+}
+
+func (m *mockServerTeamsService) GetTeam(_ context.Context, _ string) (*teams.Team, error) {
+	return &teams.Team{}, nil
+}
+
+func (m *mockServerTeamsService) GetTeamMembers(_ context.Context, _ string, _ int) ([]teams.TeamMember, error) {
+	return []teams.TeamMember{}, nil
+}
+
 // --- TestNewAtlassianServer ---
 
 func TestNewAtlassianServer_HasTools(t *testing.T) {
@@ -204,7 +269,10 @@ func TestNewAtlassianServer_HasTools(t *testing.T) {
 	}
 	agileSvc := &mockServerAgileService{}
 	goalsSvc := &mockServerGoalsService{}
-	s := mcpserver.NewAtlassianServer(svc, agileSvc, goalsSvc)
+	releasesSvc := &mockServerReleasesService{}
+	projectsSvc := &mockServerProjectsService{}
+	teamsSvc := &mockServerTeamsService{}
+	s := mcpserver.NewAtlassianServer(svc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, audit.NewNoopLogger())
 	if s == nil {
 		t.Fatal("NewAtlassianServer returned nil")
 	}

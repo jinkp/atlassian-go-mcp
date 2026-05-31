@@ -15,10 +15,14 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/agile"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/client"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/goals"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
+	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/projects"
+	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/releases"
+	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/teams"
 	"github.com/jinkp/atlassian-go-mcp/internal/claude"
 	mcpserver "github.com/jinkp/atlassian-go-mcp/internal/mcp"
 	"github.com/jinkp/atlassian-go-mcp/internal/opencode"
@@ -66,7 +70,14 @@ func newMCPCommand() *cobra.Command {
 			svc := jira.NewService(httpClient, cfg.BaseURL)
 			agileSvc := agile.NewService(httpClient, cfg.BaseURL)
 			goalsSvc := goals.NewService(httpClient, cfg.BaseURL)
-			return mcpserver.StartServer(svc, agileSvc, goalsSvc)
+			releasesSvc := releases.NewService(httpClient, cfg.BaseURL)
+			projectsSvc := projects.NewService(httpClient, cfg.BaseURL)
+			// ATLASSIAN_ORG_ID is required for teams tools. If empty, teams tools will fail
+			// at invocation time with an appropriate error — non-teams tools are unaffected.
+			orgID := os.Getenv("ATLASSIAN_ORG_ID")
+			teamsSvc := teams.NewService(httpClient, orgID)
+			auditLog := audit.NewJSONLogger(os.Stderr)
+			return mcpserver.StartServer(svc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, auditLog)
 		},
 	}
 }

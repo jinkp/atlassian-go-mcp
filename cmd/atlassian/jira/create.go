@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
 	"github.com/spf13/cobra"
 )
 
 // NewCreateCmd returns the "create --project ... --type ... --summary ..." command.
-func NewCreateCmd(svc jira.Service) *cobra.Command {
+func NewCreateCmd(svc jira.Service, auditLog audit.Logger, dryRun bool) *cobra.Command {
 	var (
 		project     string
 		issueType   string
@@ -24,6 +25,10 @@ func NewCreateCmd(svc jira.Service) *cobra.Command {
 		Use:   "create",
 		Short: "Create a new Jira issue",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRun {
+				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would create jira issue: project=%s type=%s summary=%q\n", project, issueType, summary)
+				return nil
+			}
 			req := jira.CreateIssueRequest{
 				ProjectKey:  project,
 				IssueType:   issueType,
@@ -34,13 +39,15 @@ func NewCreateCmd(svc jira.Service) *cobra.Command {
 			}
 
 			resp, err := svc.CreateIssue(context.Background(), req)
-			if err != nil {
-				exitCode := exitCodeForError(err)
-				fmt.Fprintln(os.Stderr, "error:", err)
-				os.Exit(exitCode)
-			}
+		auditLog.Log(audit.NewEntry("create_jira_issue", "jira",
+			map[string]any{"project": project, "summary": summary}, err))
+		if err != nil {
+			exitCode := exitCodeForError(err)
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(exitCode)
+		}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Created: %s\n", resp.Key)
+		fmt.Fprintf(cmd.OutOrStdout(), "Created: %s\n", resp.Key)
 			return nil
 		},
 	}

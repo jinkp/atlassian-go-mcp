@@ -1,10 +1,13 @@
 package goals_test
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
 
+	goalscli "github.com/jinkp/atlassian-go-mcp/cmd/atlassian/goals"
+	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	goalssvc "github.com/jinkp/atlassian-go-mcp/internal/atlassian/goals"
 )
 
@@ -70,6 +73,63 @@ func TestUpdateGoalStatus_Success(t *testing.T) {
 	out := "Updated goal: ari:cloud:townsquare::goal/xyz"
 	if !strings.Contains(out, "Updated goal:") {
 		t.Errorf("output missing prefix\nGot: %s", out)
+	}
+}
+
+// --- SC-G8: goals edit — success ---
+
+func TestEditGoal_Success(t *testing.T) {
+	var gotReq goalssvc.EditGoalRequest
+	newName := "Updated Name"
+	svc := &mockGoalsService{
+		editGoalFunc: func(_ context.Context, req goalssvc.EditGoalRequest) (*goalssvc.Goal, error) {
+			gotReq = req
+			return &goalssvc.Goal{
+				ID:   "ari:cloud:townsquare::goal/xyz",
+				Name: newName,
+			}, nil
+		},
+	}
+
+	result, err := svc.EditGoal(context.Background(), goalssvc.EditGoalRequest{
+		GoalID: "ari:cloud:townsquare::goal/xyz",
+		Name:   &newName,
+	})
+	if err != nil {
+		t.Fatalf("EditGoal() unexpected error: %v", err)
+	}
+	if result.Name != newName {
+		t.Errorf("expected name %q, got %q", newName, result.Name)
+	}
+	if gotReq.GoalID != "ari:cloud:townsquare::goal/xyz" {
+		t.Errorf("expected GoalID, got %q", gotReq.GoalID)
+	}
+
+	out := "Updated goal: ari:cloud:townsquare::goal/xyz Updated Name"
+	if !strings.Contains(out, "Updated goal:") {
+		t.Errorf("output missing 'Updated goal:'\nGot: %s", out)
+	}
+}
+
+func TestEditGoal_DryRun(t *testing.T) {
+	// Service must NOT be called when dryRun=true
+	svc := &mockGoalsService{
+		editGoalFunc: func(_ context.Context, _ goalssvc.EditGoalRequest) (*goalssvc.Goal, error) {
+			t.Error("service should NOT be called in dry-run mode")
+			return nil, nil
+		},
+	}
+
+	cmd := goalscli.NewEditCmd(svc, audit.NewNoopLogger(), true)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetArgs([]string{"ari:cloud:townsquare::goal/xyz", "--name", "New Name"})
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "[DRY RUN]") {
+		t.Errorf("expected [DRY RUN] in output, got: %q", buf.String())
 	}
 }
 

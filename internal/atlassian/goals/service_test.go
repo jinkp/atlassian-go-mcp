@@ -664,3 +664,99 @@ func TestCreateGoal(t *testing.T) {
 		})
 	}
 }
+
+// --- TestEditGoal ---
+
+func TestEditGoal(t *testing.T) {
+	ptrStr := func(s string) *string { return &s }
+	ptrBool := func(b bool) *bool { return &b }
+
+	tests := []struct {
+		name            string
+		req             EditGoalRequest
+		handler         func(w http.ResponseWriter, r *http.Request)
+		wantErr         bool
+		wantErrContains string
+		wantGoalID      string
+		wantGoalName    string
+	}{
+		{
+			name: "success - name updated",
+			req:  EditGoalRequest{GoalID: "ari:cloud:townsquare:abc:goal/g1", Name: ptrStr("New Name")},
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"data":{"goals_edit":{"goal":{"id":"ari:cloud:townsquare:abc:goal/g1","name":"New Name","targetDate":"","isArchived":false},"userErrors":[]}}}`))
+			},
+			wantGoalID:   "ari:cloud:townsquare:abc:goal/g1",
+			wantGoalName: "New Name",
+		},
+		{
+			name: "userErrors returned - propagated as error",
+			req:  EditGoalRequest{GoalID: "bad-id"},
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"data":{"goals_edit":{"goal":null,"userErrors":[{"field":"goalId","message":"Goal not found"}]}}}`))
+			},
+			wantErr:         true,
+			wantErrContains: "Goal not found",
+		},
+		{
+			name: "archive goal - success",
+			req:  EditGoalRequest{GoalID: "ari:cloud:townsquare:abc:goal/g1", Archive: ptrBool(true)},
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"data":{"goals_edit":{"goal":{"id":"ari:cloud:townsquare:abc:goal/g1","name":"My Goal","targetDate":"","isArchived":true},"userErrors":[]}}}`))
+			},
+			wantGoalID:   "ari:cloud:townsquare:abc:goal/g1",
+			wantGoalName: "My Goal",
+		},
+		{
+			name: "HTTP 401 - unauthorized",
+			req:  EditGoalRequest{GoalID: "g1"},
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusUnauthorized)
+			},
+			wantErr:         true,
+			wantErrContains: "unauthorized",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(tc.handler))
+			defer srv.Close()
+
+			svc := newTestService(srv.URL)
+			got, err := svc.EditGoal(context.Background(), tc.req)
+
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if tc.wantErrContains != "" && !strings.Contains(strings.ToLower(err.Error()), strings.ToLower(tc.wantErrContains)) {
+					t.Errorf("error %q does not contain %q", err.Error(), tc.wantErrContains)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got == nil {
+				t.Fatal("expected non-nil goal")
+			}
+			if got.ID != tc.wantGoalID {
+				t.Errorf("ID: got %q, want %q", got.ID, tc.wantGoalID)
+			}
+			if got.Name != tc.wantGoalName {
+				t.Errorf("Name: got %q, want %q", got.Name, tc.wantGoalName)
+			}
+		})
+	}
+}
+
+// ptr helpers used in tests but not exported (avoid lint warning).
+var _ = func() *string { s := ""; return &s }
+var _ = errors.New

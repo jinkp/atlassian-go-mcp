@@ -11,10 +11,17 @@ import (
 	atlcliagile "github.com/jinkp/atlassian-go-mcp/cmd/atlassian/agile"
 	atlcligoals "github.com/jinkp/atlassian-go-mcp/cmd/atlassian/goals"
 	"github.com/jinkp/atlassian-go-mcp/cmd/atlassian/jira"
+	atlcliprojects "github.com/jinkp/atlassian-go-mcp/cmd/atlassian/projects"
+	atlclireleases "github.com/jinkp/atlassian-go-mcp/cmd/atlassian/releases"
+	atlcliteams "github.com/jinkp/atlassian-go-mcp/cmd/atlassian/teams"
+	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	atlclient "github.com/jinkp/atlassian-go-mcp/internal/atlassian/client"
 	agilesvc "github.com/jinkp/atlassian-go-mcp/internal/atlassian/agile"
 	goalssvc "github.com/jinkp/atlassian-go-mcp/internal/atlassian/goals"
 	jirasvc "github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
+	projectssvc "github.com/jinkp/atlassian-go-mcp/internal/atlassian/projects"
+	releasessvc "github.com/jinkp/atlassian-go-mcp/internal/atlassian/releases"
+	teamssvc "github.com/jinkp/atlassian-go-mcp/internal/atlassian/teams"
 	"github.com/spf13/cobra"
 )
 
@@ -26,6 +33,9 @@ func main() {
 }
 
 func buildRootCmd() *cobra.Command {
+	auditLog := audit.NewJSONLogger(os.Stderr)
+	var dryRun bool
+
 	root := &cobra.Command{
 		Use:   "atlassian",
 		Short: "CLI for Atlassian (Jira, Agile, Goals) operations",
@@ -34,6 +44,7 @@ func buildRootCmd() *cobra.Command {
 			return validateEnv()
 		},
 	}
+	root.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "Print what would happen without executing write operations")
 
 	// Build the client from env vars. We do this lazily in PersistentPreRunE
 	// so validation happens before any command runs.
@@ -44,9 +55,12 @@ func buildRootCmd() *cobra.Command {
 	}
 
 	var (
-		svc      jirasvc.Service
-		agileSvc agilesvc.AgileService
-		goalsSvc goalssvc.GoalsService
+		svc         jirasvc.Service
+		agileSvc    agilesvc.AgileService
+		goalsSvc    goalssvc.GoalsService
+		releasesSvc releasessvc.ReleasesService
+		projectsSvc projectssvc.ProjectsService
+		teamsSvc    teamssvc.TeamsService
 	)
 
 	if err == nil {
@@ -55,6 +69,11 @@ func buildRootCmd() *cobra.Command {
 			svc = jirasvc.NewService(c, cfg.BaseURL)
 			agileSvc = agilesvc.NewService(c, cfg.BaseURL)
 			goalsSvc = goalssvc.NewService(c, cfg.BaseURL)
+			releasesSvc = releasessvc.NewService(c, cfg.BaseURL)
+			projectsSvc = projectssvc.NewService(c, cfg.BaseURL)
+			// ATLASSIAN_ORG_ID is required for teams commands only — validate lazily.
+			orgID := os.Getenv("ATLASSIAN_ORG_ID")
+			teamsSvc = teamssvc.NewService(c, orgID)
 		}
 	}
 
@@ -69,26 +88,50 @@ func buildRootCmd() *cobra.Command {
 	if goalsSvc == nil {
 		goalsSvc = &nilGoalsService{}
 	}
+	if releasesSvc == nil {
+		releasesSvc = &nilReleasesService{}
+	}
+	if projectsSvc == nil {
+		projectsSvc = &nilProjectsService{}
+	}
+	if teamsSvc == nil {
+		teamsSvc = &nilTeamsService{}
+	}
 
 	// Jira subgroup
 	jiraRoot := jira.NewJiraCmd()
 	jiraRoot.AddCommand(jira.NewGetCmd(svc))
 	jiraRoot.AddCommand(jira.NewSearchCmd(svc))
-	jiraRoot.AddCommand(jira.NewCreateCmd(svc))
-	jiraRoot.AddCommand(jira.NewUpdateCmd(svc))
+	jiraRoot.AddCommand(jira.NewCreateCmd(svc, auditLog, dryRun))
+	jiraRoot.AddCommand(jira.NewUpdateCmd(svc, auditLog, dryRun))
 	jiraRoot.AddCommand(jira.NewTransitionsCmd(svc))
-	jiraRoot.AddCommand(jira.NewTransitionCmd(svc))
+	jiraRoot.AddCommand(jira.NewTransitionCmd(svc, auditLog, dryRun))
 	root.AddCommand(jiraRoot)
 
 	// Agile subgroup
 	agileRoot := atlcliagile.NewAgileCmd()
-	atlcliagile.RegisterCommands(agileRoot, agileSvc)
+	atlcliagile.RegisterCommands(agileRoot, agileSvc, auditLog, dryRun)
 	root.AddCommand(agileRoot)
 
 	// Goals subgroup
 	goalsRoot := atlcligoals.NewGoalsCmd()
-	atlcligoals.RegisterCommands(goalsRoot, goalsSvc)
+	atlcligoals.RegisterCommands(goalsRoot, goalsSvc, auditLog, dryRun)
 	root.AddCommand(goalsRoot)
+
+	// Releases subgroup
+	releasesRoot := atlclireleases.NewReleasesCmd()
+	atlclireleases.RegisterCommands(releasesRoot, releasesSvc, auditLog, dryRun)
+	root.AddCommand(releasesRoot)
+
+	// Projects subgroup
+	projectsRoot := atlcliprojects.NewProjectsCmd()
+	atlcliprojects.RegisterCommands(projectsRoot, projectsSvc, auditLog, dryRun)
+	root.AddCommand(projectsRoot)
+
+	// Teams subgroup
+	teamsRoot := atlcliteams.NewTeamsCmd()
+	atlcliteams.RegisterCommands(teamsRoot, teamsSvc)
+	root.AddCommand(teamsRoot)
 
 	return root
 }
@@ -189,5 +232,61 @@ func (n *nilGoalsService) UpdateGoalStatus(_ context.Context, _ goalssvc.UpdateG
 	return fmt.Errorf("service not initialized: missing env vars")
 }
 func (n *nilGoalsService) CreateGoal(_ context.Context, _ goalssvc.CreateGoalRequest) (*goalssvc.CreateGoalResult, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+
+func (n *nilGoalsService) EditGoal(_ context.Context, _ goalssvc.EditGoalRequest) (*goalssvc.Goal, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+
+// --- nilReleasesService: no-op Releases service for --help without credentials ---
+
+type nilReleasesService struct{}
+
+func (n *nilReleasesService) GetReleases(_ context.Context, _ string) ([]releasessvc.Release, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilReleasesService) GetRelease(_ context.Context, _ string) (*releasessvc.Release, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilReleasesService) GetReleaseIssueCounts(_ context.Context, _ string) (*releasessvc.ReleaseIssueCounts, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilReleasesService) CreateRelease(_ context.Context, _ releasessvc.CreateReleaseRequest) (*releasessvc.Release, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilReleasesService) UpdateRelease(_ context.Context, _ string, _ releasessvc.UpdateReleaseRequest) (*releasessvc.Release, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+
+// --- nilProjectsService: no-op Projects service for --help without credentials ---
+
+type nilProjectsService struct{}
+
+func (n *nilProjectsService) GetProjects(_ context.Context, _ int) ([]projectssvc.Project, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilProjectsService) GetProject(_ context.Context, _ string) (*projectssvc.Project, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilProjectsService) SearchProjects(_ context.Context, _ projectssvc.SearchProjectsRequest) (*projectssvc.SearchProjectsResult, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilProjectsService) UpdateProject(_ context.Context, _ string, _ projectssvc.UpdateProjectRequest) (*projectssvc.Project, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+
+// --- nilTeamsService: no-op Teams service for --help without credentials ---
+// Never reached because PersistentPreRunE exits(1) first.
+
+type nilTeamsService struct{}
+
+func (n *nilTeamsService) GetTeams(_ context.Context, _ string, _ int) (*teamssvc.TeamSearchResult, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilTeamsService) GetTeam(_ context.Context, _ string) (*teamssvc.Team, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilTeamsService) GetTeamMembers(_ context.Context, _ string, _ int) ([]teamssvc.TeamMember, error) {
 	return nil, fmt.Errorf("service not initialized: missing env vars")
 }

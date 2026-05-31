@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/goals"
 	"github.com/spf13/cobra"
 )
 
 // NewUpdateCmd returns the "update --goal-id --status [--score N] [--summary ...]" command.
-func NewUpdateCmd(svc goals.GoalsService) *cobra.Command {
+func NewUpdateCmd(svc goals.GoalsService, auditLog audit.Logger, dryRun bool) *cobra.Command {
 	var (
 		goalID  string
 		status  string
@@ -22,6 +23,10 @@ func NewUpdateCmd(svc goals.GoalsService) *cobra.Command {
 		Use:   "update",
 		Short: "Post a status update (check-in) to an Atlassian Goal",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRun {
+				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would update goal status: goal-id=%s status=%s\n", goalID, status)
+				return nil
+			}
 			req := goals.UpdateGoalStatusRequest{
 				GoalID:  goalID,
 				Status:  status,
@@ -30,10 +35,12 @@ func NewUpdateCmd(svc goals.GoalsService) *cobra.Command {
 			}
 
 			err := svc.UpdateGoalStatus(context.Background(), req)
-			if err != nil {
-				fmt.Fprintln(os.Stderr, "error:", err)
-				os.Exit(goalsExitCode(err))
-			}
+		auditLog.Log(audit.NewEntry("update_goal_status", "goals",
+			map[string]any{"goal_id": goalID, "status": status}, err))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(goalsExitCode(err))
+		}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Updated goal: %s\n", goalID)
 			return nil

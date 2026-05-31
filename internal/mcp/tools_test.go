@@ -9,9 +9,19 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	jira "github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
 	mcpserver "github.com/jinkp/atlassian-go-mcp/internal/mcp"
 )
+
+// captureLogger records all audit entries for test assertions.
+type captureLogger struct {
+	entries []audit.Entry
+}
+
+func (c *captureLogger) Log(e audit.Entry) {
+	c.entries = append(c.entries, e)
+}
 
 // mockJiraService implements jira.Service for testing.
 type mockJiraService struct {
@@ -395,7 +405,7 @@ func TestToolCreateJiraIssue(t *testing.T) {
 			svc := &mockJiraService{
 				createIssueFunc: tc.mockFn,
 			}
-			handler := mcpserver.ToolCreateJiraIssue(svc)
+			handler := mcpserver.ToolCreateJiraIssue(svc, audit.NewNoopLogger())
 			req := makeCallToolRequest(tc.args)
 			result, err := handler(context.Background(), req)
 			if err != nil {
@@ -479,7 +489,7 @@ func TestToolUpdateJiraIssue(t *testing.T) {
 			svc := &mockJiraService{
 				updateIssueFunc: tc.mockFn,
 			}
-			handler := mcpserver.ToolUpdateJiraIssue(svc)
+			handler := mcpserver.ToolUpdateJiraIssue(svc, audit.NewNoopLogger())
 			req := makeCallToolRequest(tc.args)
 			result, err := handler(context.Background(), req)
 			if err != nil {
@@ -670,7 +680,7 @@ func TestToolTransitionJiraIssue(t *testing.T) {
 			svc := &mockJiraService{
 				transitionIssueFunc: tc.mockFn,
 			}
-			handler := mcpserver.ToolTransitionJiraIssue(svc)
+			handler := mcpserver.ToolTransitionJiraIssue(svc, audit.NewNoopLogger())
 			req := makeCallToolRequest(tc.args)
 			result, err := handler(context.Background(), req)
 			if err != nil {

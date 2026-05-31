@@ -61,8 +61,11 @@ func NewClient(cfg Config) (*Client, error) {
 		APIToken:  cfg.APIToken,
 		Transport: inner,
 	}
+	idempotency := &IdempotencyTransport{
+		Transport: auth,
+	}
 	retry := &RetryTransport{
-		Transport:  auth,
+		Transport:  idempotency,
 		MaxRetries: maxRetries,
 		BaseDelay:  1 * time.Second,
 		MaxDelay:   30 * time.Second,

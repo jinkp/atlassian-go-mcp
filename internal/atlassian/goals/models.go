@@ -208,6 +208,49 @@ type goalsCreateData struct {
 	} `json:"goals_create"`
 }
 
+// EditGoalRequest holds parameters for the goals_edit mutation.
+// All fields except GoalID are optional (nil = omit).
+type EditGoalRequest struct {
+	GoalID     string  // required; ARI
+	Name       *string // optional; new goal name
+	TargetDate *string // optional; YYYY-MM-DD
+	Confidence *string // optional; default "QUARTER" when TargetDate set and Confidence nil
+	Archive    *bool   // optional; true = archive, false = unarchive
+}
+
+// editGoalAPIInput is the input type for the goals_edit mutation.
+type editGoalAPIInput struct {
+	GoalID     string              `json:"goalId"`
+	Name       *string             `json:"name,omitempty"`
+	TargetDate *editGoalTargetDate `json:"targetDate,omitempty"`
+	IsArchived *bool               `json:"isArchived,omitempty"`
+}
+
+// editGoalTargetDate holds the target date + confidence for goal edits.
+type editGoalTargetDate struct {
+	Date       string `json:"date"`
+	Confidence string `json:"confidence"`
+}
+
+// goalsEditResponseGoal is the wire-format goal returned by goals_edit.
+type goalsEditResponseGoal struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	TargetDate string `json:"targetDate"`
+	IsArchived bool   `json:"isArchived"`
+}
+
+// goalsEditData is the shape of {"data":{"goals_edit":{"goal":{...},"userErrors":[...]}}}
+type goalsEditData struct {
+	GoalsEdit struct {
+		Goal       *goalsEditResponseGoal `json:"goal"`
+		UserErrors []struct {
+			Field   string `json:"field"`
+			Message string `json:"message"`
+		} `json:"userErrors"`
+	} `json:"goals_edit"`
+}
+
 // firstGraphQLError returns the message of the first error in the errors array, or "".
 func firstGraphQLError(errs []graphQLError) string {
 	if len(errs) > 0 {

@@ -8,8 +8,55 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/goals"
 )
+
+// ToolEditGoal returns an MCP tool handler that edits structural fields of an Atlassian Goal.
+// Required: WriteGuardCheck, goal_id. Optional: name, target_date, confidence, archive (bool).
+// Returns the updated Goal as JSON.
+func ToolEditGoal(goalsSvc goals.GoalsService, log audit.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if err := WriteGuardCheck(); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
+		goalID := mcp.ParseString(req, "goal_id", "")
+		if goalID == "" {
+			return mcp.NewToolResultError("goal_id is required"), nil
+		}
+
+		editReq := goals.EditGoalRequest{GoalID: goalID}
+
+		if n := mcp.ParseString(req, "name", ""); n != "" {
+			editReq.Name = &n
+		}
+		if td := mcp.ParseString(req, "target_date", ""); td != "" {
+			editReq.TargetDate = &td
+		}
+		if c := mcp.ParseString(req, "confidence", ""); c != "" {
+			editReq.Confidence = &c
+		}
+		// archive is a bool — only set if explicitly passed as true/false string
+		if a := mcp.ParseString(req, "archive", ""); a != "" {
+			b := a == "true"
+			editReq.Archive = &b
+		}
+
+		result, svcErr := goalsSvc.EditGoal(ctx, editReq)
+		log.Log(audit.NewEntry("edit_goal", "goals",
+			map[string]any{"goal_id": goalID}, svcErr))
+		if svcErr != nil {
+			return mcp.NewToolResultError(svcErr.Error()), nil
+		}
+
+		data, marshalErr := json.Marshal(result)
+		if marshalErr != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("serialization error: %v", marshalErr)), nil
+		}
+		return mcp.NewToolResultText(string(data)), nil
+	}
+}
 
 // ToolGetSiteID returns an MCP tool handler that resolves a subdomain to a cloudId.
 // Required: subdomain (e.g. "myorg"). Returns JSON {"cloud_id": "..."}.
@@ -99,7 +146,7 @@ func ToolSearchGoals(goalsSvc goals.GoalsService) server.ToolHandlerFunc {
 // Required: WriteGuardCheck, site_id, name, goal_type_id, target_date.
 // Optional: confidence (default "QUARTER"), description.
 // Returns JSON {"id":"...","name":"..."}.
-func ToolCreateGoal(goalsSvc goals.GoalsService) server.ToolHandlerFunc {
+func ToolCreateGoal(goalsSvc goals.GoalsService, log audit.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		if err := WriteGuardCheck(); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
@@ -138,6 +185,8 @@ func ToolCreateGoal(goalsSvc goals.GoalsService) server.ToolHandlerFunc {
 		}
 
 		result, svcErr := goalsSvc.CreateGoal(ctx, createReq)
+		log.Log(audit.NewEntry("create_goal", "goals",
+			map[string]any{"site_id": siteID, "name": name}, svcErr))
 		if svcErr != nil {
 			return mcp.NewToolResultError(svcErr.Error()), nil
 		}
@@ -153,7 +202,7 @@ func ToolCreateGoal(goalsSvc goals.GoalsService) server.ToolHandlerFunc {
 // ToolUpdateGoalStatus returns an MCP tool handler that posts a goal status check-in.
 // Required: WriteGuardCheck, goal_id, status. Optional: score, summary.
 // Returns "ok" on success.
-func ToolUpdateGoalStatus(goalsSvc goals.GoalsService) server.ToolHandlerFunc {
+func ToolUpdateGoalStatus(goalsSvc goals.GoalsService, log audit.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		if err := WriteGuardCheck(); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
@@ -179,7 +228,10 @@ func ToolUpdateGoalStatus(goalsSvc goals.GoalsService) server.ToolHandlerFunc {
 			Summary: summary,
 		}
 
-		if svcErr := goalsSvc.UpdateGoalStatus(ctx, updateReq); svcErr != nil {
+		svcErr := goalsSvc.UpdateGoalStatus(ctx, updateReq)
+		log.Log(audit.NewEntry("update_goal_status", "goals",
+			map[string]any{"goal_id": goalID, "status": status}, svcErr))
+		if svcErr != nil {
 			return mcp.NewToolResultError(svcErr.Error()), nil
 		}
 		return mcp.NewToolResultText("ok"), nil

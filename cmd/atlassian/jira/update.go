@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
 	"github.com/spf13/cobra"
 )
 
 // NewUpdateCmd returns the "update <KEY> [--summary ...] [--description ...] [--assignee ...] [--priority ...]" command.
-func NewUpdateCmd(svc jira.Service) *cobra.Command {
+func NewUpdateCmd(svc jira.Service, auditLog audit.Logger, dryRun bool) *cobra.Command {
 	var (
 		summary     string
 		description string
@@ -24,6 +25,10 @@ func NewUpdateCmd(svc jira.Service) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			key := args[0]
+			if dryRun {
+				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would update jira issue: key=%s\n", key)
+				return nil
+			}
 			req := jira.UpdateIssueRequest{}
 
 			if cmd.Flags().Changed("summary") {
@@ -39,14 +44,16 @@ func NewUpdateCmd(svc jira.Service) *cobra.Command {
 				req.PriorityName = &priority
 			}
 
-			err := svc.UpdateIssue(context.Background(), key, req)
-			if err != nil {
-				exitCode := exitCodeForError(err)
-				fmt.Fprintln(os.Stderr, "error:", err)
-				os.Exit(exitCode)
-			}
+		err := svc.UpdateIssue(context.Background(), key, req)
+		auditLog.Log(audit.NewEntry("update_jira_issue", "jira",
+			map[string]any{"issue_key": key}, err))
+		if err != nil {
+			exitCode := exitCodeForError(err)
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(exitCode)
+		}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Updated: %s\n", key)
+		fmt.Fprintf(cmd.OutOrStdout(), "Updated: %s\n", key)
 			return nil
 		},
 	}

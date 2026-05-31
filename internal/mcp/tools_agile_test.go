@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/agile"
 	jira "github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
 	mcpserver "github.com/jinkp/atlassian-go-mcp/internal/mcp"
@@ -671,7 +672,7 @@ func TestToolUpdateSprint(t *testing.T) {
 				t.Setenv("ENABLE_WRITE", tc.envWrite)
 			}
 			svc := &mockAgileService{updateSprintFunc: tc.mockFn}
-			handler := mcpserver.ToolUpdateSprint(svc)
+			handler := mcpserver.ToolUpdateSprint(svc, audit.NewNoopLogger())
 			req := makeCallToolRequest(tc.args)
 			result, err := handler(context.Background(), req)
 			if err != nil {
@@ -746,7 +747,7 @@ func TestToolMoveIssuesToSprint(t *testing.T) {
 				t.Setenv("ENABLE_WRITE", tc.envWrite)
 			}
 			svc := &mockAgileService{moveIssuesToSprintFunc: tc.mockFn}
-			handler := mcpserver.ToolMoveIssuesToSprint(svc)
+			handler := mcpserver.ToolMoveIssuesToSprint(svc, audit.NewNoopLogger())
 			req := makeCallToolRequest(tc.args)
 			result, err := handler(context.Background(), req)
 			if err != nil {
@@ -821,7 +822,7 @@ func TestToolMoveIssuesToEpic(t *testing.T) {
 				t.Setenv("ENABLE_WRITE", tc.envWrite)
 			}
 			svc := &mockAgileService{moveIssuesToEpicFunc: tc.mockFn}
-			handler := mcpserver.ToolMoveIssuesToEpic(svc)
+			handler := mcpserver.ToolMoveIssuesToEpic(svc, audit.NewNoopLogger())
 			req := makeCallToolRequest(tc.args)
 			result, err := handler(context.Background(), req)
 			if err != nil {
@@ -902,7 +903,7 @@ func TestToolCreateSprint(t *testing.T) {
 				t.Setenv("ENABLE_WRITE", tc.envWrite)
 			}
 			svc := &mockAgileService{createSprintFunc: tc.mockFn}
-			handler := mcpserver.ToolCreateSprint(svc)
+			handler := mcpserver.ToolCreateSprint(svc, audit.NewNoopLogger())
 			req := makeCallToolRequest(tc.args)
 			result, err := handler(context.Background(), req)
 			if err != nil {
@@ -929,7 +930,7 @@ func TestToolCreateSprint_WithDates(t *testing.T) {
 			return &agile.Sprint{ID: 55, Name: "Sprint 8", State: "future"}, nil
 		},
 	}
-	handler := mcpserver.ToolCreateSprint(svc)
+	handler := mcpserver.ToolCreateSprint(svc, audit.NewNoopLogger())
 	req := makeCallToolRequest(map[string]any{
 		"name":       "Sprint 8",
 		"board_id":   float64(10),
@@ -959,7 +960,7 @@ func TestToolCreateSprint_ServiceErrorPropagates(t *testing.T) {
 			return nil, fmt.Errorf("Board does not support sprints")
 		},
 	}
-	handler := mcpserver.ToolCreateSprint(svc)
+	handler := mcpserver.ToolCreateSprint(svc, audit.NewNoopLogger())
 	req := makeCallToolRequest(map[string]any{"name": "Sprint 8", "board_id": float64(20)})
 	result, err := handler(context.Background(), req)
 	if err != nil {

@@ -21,6 +21,7 @@ type GoalsService interface {
 	SearchGoals(ctx context.Context, req SearchGoalsRequest) (*GoalSearchResult, error)
 	UpdateGoalStatus(ctx context.Context, req UpdateGoalStatusRequest) error
 	CreateGoal(ctx context.Context, req CreateGoalRequest) (*CreateGoalResult, error)
+	EditGoal(ctx context.Context, req EditGoalRequest) (*Goal, error)
 }
 
 // GoalsGraphQLService implements GoalsService via the Atlassian platform GraphQL gateway.
@@ -245,6 +246,62 @@ func (s *GoalsGraphQLService) CreateGoal(ctx context.Context, req CreateGoalRequ
 		ID:   data.GoalsCreate.Goal.ID,
 		Name: data.GoalsCreate.Goal.Name,
 	}, nil
+}
+
+// EditGoal updates structural fields of a goal (name, targetDate, isArchived) via the goals_edit mutation.
+// Returns the updated goal or an error. Business validation errors are returned via userErrors in the
+// response payload — these are distinct from transport-level errors in the root errors[] field.
+func (s *GoalsGraphQLService) EditGoal(ctx context.Context, req EditGoalRequest) (*Goal, error) {
+	const mutationQuery = `mutation EditGoal($input: goals_EditGoalInput!) {
+  goals_edit(input: $input) {
+    goal { id name targetDate isArchived }
+    userErrors { field message }
+  }
+}`
+
+	input := editGoalAPIInput{
+		GoalID:     req.GoalID,
+		Name:       req.Name,
+		IsArchived: req.Archive,
+	}
+	if req.TargetDate != nil {
+		conf := "QUARTER"
+		if req.Confidence != nil {
+			conf = *req.Confidence
+		}
+		input.TargetDate = &editGoalTargetDate{
+			Date:       *req.TargetDate,
+			Confidence: conf,
+		}
+	}
+
+	variables := map[string]any{"input": input}
+
+	envelope, err := s.doGraphQL(ctx, mutationQuery, variables)
+	if err != nil {
+		return nil, err
+	}
+	if msg := firstGraphQLError(envelope.Errors); msg != "" {
+		return nil, fmt.Errorf("goals: GraphQL error: %s", msg)
+	}
+
+	var data goalsEditData
+	if err := json.Unmarshal(envelope.Data, &data); err != nil {
+		return nil, fmt.Errorf("goals: decoding goals_edit: %w", err)
+	}
+	if len(data.GoalsEdit.UserErrors) > 0 {
+		return nil, fmt.Errorf("%s", data.GoalsEdit.UserErrors[0].Message)
+	}
+	if data.GoalsEdit.Goal == nil {
+		return nil, fmt.Errorf("goals: edit returned nil goal")
+	}
+
+	g := &Goal{
+		ID:         data.GoalsEdit.Goal.ID,
+		Name:       data.GoalsEdit.Goal.Name,
+		TargetDate: data.GoalsEdit.Goal.TargetDate,
+	}
+	return g, nil
 }
 
 // UpdateGoalStatus posts a check-in update to a goal with new status, optional score, optional summary.

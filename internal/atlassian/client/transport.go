@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // BasicAuthTransport is an http.RoundTripper that injects an Authorization: Basic
@@ -31,6 +33,29 @@ func (t *BasicAuthTransport) RoundTrip(r *http.Request) (*http.Response, error) 
 	req.Header.Set("Authorization", "Basic "+encoded)
 
 	return inner.RoundTrip(req)
+}
+
+// IdempotencyTransport is an http.RoundTripper that injects an Idempotency-Key header
+// on every POST request. The key is a fresh UUID v4 per request, ensuring that retries
+// of the same logical operation carry the same key (because RetryTransport clones the
+// already-modified request, preserving the header set here).
+type IdempotencyTransport struct {
+	Transport http.RoundTripper // inner; defaults to http.DefaultTransport if nil
+}
+
+// RoundTrip injects Idempotency-Key on POST requests only, then delegates to inner transport.
+// For non-POST methods the request is forwarded unchanged.
+func (t *IdempotencyTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	inner := t.Transport
+	if inner == nil {
+		inner = http.DefaultTransport
+	}
+	if r.Method == http.MethodPost {
+		req := r.Clone(r.Context())
+		req.Header.Set("Idempotency-Key", uuid.New().String())
+		return inner.RoundTrip(req)
+	}
+	return inner.RoundTrip(r)
 }
 
 // RetryTransport is an http.RoundTripper that retries requests on HTTP 429

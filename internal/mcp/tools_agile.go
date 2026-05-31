@@ -8,6 +8,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/agile"
 	jira "github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
 )
@@ -135,7 +136,7 @@ func ToolGetJiraSprintIssues(agileSvc agile.AgileService) server.ToolHandlerFunc
 // ToolUpdateSprint returns an MCP tool handler that updates a sprint's name, state, or dates.
 // Requires sprint_id (number) and ENABLE_WRITE=true. Accepts optional state, name, start_date, end_date.
 // Returns the updated sprint as JSON on success.
-func ToolUpdateSprint(agileSvc agile.AgileService) server.ToolHandlerFunc {
+func ToolUpdateSprint(agileSvc agile.AgileService, log audit.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		if err := WriteGuardCheck(); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
@@ -161,6 +162,8 @@ func ToolUpdateSprint(agileSvc agile.AgileService) server.ToolHandlerFunc {
 		}
 
 		sprint, svcErr := agileSvc.UpdateSprint(ctx, sprintID, updateReq)
+		log.Log(audit.NewEntry("update_sprint", "agile",
+			map[string]any{"sprint_id": sprintID}, svcErr))
 		if svcErr != nil {
 			return mcp.NewToolResultError(svcErr.Error()), nil
 		}
@@ -175,7 +178,7 @@ func ToolUpdateSprint(agileSvc agile.AgileService) server.ToolHandlerFunc {
 
 // ToolMoveIssuesToSprint returns an MCP tool handler that moves issues into a sprint.
 // Requires sprint_id (number) and issue_keys (comma-separated string). Requires ENABLE_WRITE=true.
-func ToolMoveIssuesToSprint(agileSvc agile.AgileService) server.ToolHandlerFunc {
+func ToolMoveIssuesToSprint(agileSvc agile.AgileService, log audit.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		if err := WriteGuardCheck(); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
@@ -192,7 +195,10 @@ func ToolMoveIssuesToSprint(agileSvc agile.AgileService) server.ToolHandlerFunc 
 		}
 		issueKeys := splitCSV(issueKeysRaw)
 
-		if svcErr := agileSvc.MoveIssuesToSprint(ctx, sprintID, issueKeys); svcErr != nil {
+		svcErr := agileSvc.MoveIssuesToSprint(ctx, sprintID, issueKeys)
+		log.Log(audit.NewEntry("move_issues_to_sprint", "agile",
+			map[string]any{"sprint_id": sprintID, "issue_keys": issueKeysRaw}, svcErr))
+		if svcErr != nil {
 			return mcp.NewToolResultError(svcErr.Error()), nil
 		}
 		return mcp.NewToolResultText("ok"), nil
@@ -201,7 +207,7 @@ func ToolMoveIssuesToSprint(agileSvc agile.AgileService) server.ToolHandlerFunc 
 
 // ToolMoveIssuesToEpic returns an MCP tool handler that links issues to an epic.
 // Requires epic_key (string) and issue_keys (comma-separated string). Requires ENABLE_WRITE=true.
-func ToolMoveIssuesToEpic(agileSvc agile.AgileService) server.ToolHandlerFunc {
+func ToolMoveIssuesToEpic(agileSvc agile.AgileService, log audit.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		if err := WriteGuardCheck(); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
@@ -218,7 +224,10 @@ func ToolMoveIssuesToEpic(agileSvc agile.AgileService) server.ToolHandlerFunc {
 		}
 		issueKeys := splitCSV(issueKeysRaw)
 
-		if svcErr := agileSvc.MoveIssuesToEpic(ctx, epicKey, issueKeys); svcErr != nil {
+		svcErr := agileSvc.MoveIssuesToEpic(ctx, epicKey, issueKeys)
+		log.Log(audit.NewEntry("move_issues_to_epic", "agile",
+			map[string]any{"epic_key": epicKey, "issue_keys": issueKeysRaw}, svcErr))
+		if svcErr != nil {
 			return mcp.NewToolResultError(svcErr.Error()), nil
 		}
 		return mcp.NewToolResultText("ok"), nil
@@ -228,7 +237,7 @@ func ToolMoveIssuesToEpic(agileSvc agile.AgileService) server.ToolHandlerFunc {
 // ToolCreateSprint returns an MCP tool handler that creates a new sprint on a board.
 // Requires name (string) and board_id (number). Accepts optional start_date and end_date.
 // Requires ENABLE_WRITE=true. Returns JSON of the created Sprint.
-func ToolCreateSprint(agileSvc agile.AgileService) server.ToolHandlerFunc {
+func ToolCreateSprint(agileSvc agile.AgileService, log audit.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		if err := WriteGuardCheck(); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
@@ -252,6 +261,8 @@ func ToolCreateSprint(agileSvc agile.AgileService) server.ToolHandlerFunc {
 		}
 
 		sprint, svcErr := agileSvc.CreateSprint(ctx, createReq)
+		log.Log(audit.NewEntry("create_sprint", "agile",
+			map[string]any{"name": name, "board_id": boardID}, svcErr))
 		if svcErr != nil {
 			return mcp.NewToolResultError(svcErr.Error()), nil
 		}

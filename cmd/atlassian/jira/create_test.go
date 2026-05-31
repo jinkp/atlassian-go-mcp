@@ -1,12 +1,15 @@
 package jira_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"strings"
 	"testing"
 
 	jirasvc "github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
+	jiracli "github.com/jinkp/atlassian-go-mcp/cmd/atlassian/jira"
+	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 )
 
 // --- SC-J1: create — success ---
@@ -88,6 +91,51 @@ func TestUpdateCommand_Success(t *testing.T) {
 	out := "Updated: PROJ-1"
 	if !strings.Contains(out, "PROJ-1") {
 		t.Errorf("output missing key\nGot: %s", out)
+	}
+}
+
+// --- DRY RUN tests ---
+
+func TestCreateCommand_DryRun_PrintsIntentNoServiceCall(t *testing.T) {
+	// Service must NOT be called when dryRun=true
+	svc := &mockJiraService{
+		createIssueFunc: func(_ context.Context, _ jirasvc.CreateIssueRequest) (*jirasvc.CreateIssueResponse, error) {
+			t.Error("service should NOT be called in dry-run mode")
+			return nil, nil
+		},
+	}
+
+	cmd := jiracli.NewCreateCmd(svc, audit.NewNoopLogger(), true)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetArgs([]string{"--project", "PROJ", "--type", "Task", "--summary", "Test"})
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "[DRY RUN]") {
+		t.Errorf("expected [DRY RUN] in output, got: %q", out)
+	}
+}
+
+func TestCreateCommand_NoDryRun_CallsService(t *testing.T) {
+	var called bool
+	svc := &mockJiraService{
+		createIssueFunc: func(_ context.Context, req jirasvc.CreateIssueRequest) (*jirasvc.CreateIssueResponse, error) {
+			called = true
+			return &jirasvc.CreateIssueResponse{Key: "PROJ-1", ID: "1"}, nil
+		},
+	}
+
+	cmd := jiracli.NewCreateCmd(svc, audit.NewNoopLogger(), false)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetArgs([]string{"--project", "PROJ", "--type", "Task", "--summary", "Test"})
+	// Note: PersistentPreRunE is not wired here so env validation is skipped
+	_ = cmd.Execute()
+	if !called {
+		t.Error("expected service to be called when dry-run=false")
 	}
 }
 

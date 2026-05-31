@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/agile"
 	"github.com/spf13/cobra"
 )
 
 // NewMoveToEpicCmd returns the "move-to-epic --epic-key ... --issues PROJ-1,PROJ-2" command.
-func NewMoveToEpicCmd(svc agile.AgileService) *cobra.Command {
+func NewMoveToEpicCmd(svc agile.AgileService, auditLog audit.Logger, dryRun bool) *cobra.Command {
 	var (
 		epicKey    string
 		issuesFlag string
@@ -20,6 +21,10 @@ func NewMoveToEpicCmd(svc agile.AgileService) *cobra.Command {
 		Use:   "move-to-epic",
 		Short: "Link issues to an epic",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRun {
+				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would move issues to epic: epic-key=%s issues=%s\n", epicKey, issuesFlag)
+				return nil
+			}
 			keys := splitIssues(issuesFlag)
 			if len(keys) == 0 {
 				fmt.Fprintln(os.Stderr, "error: --issues must contain at least one issue key")
@@ -27,10 +32,12 @@ func NewMoveToEpicCmd(svc agile.AgileService) *cobra.Command {
 			}
 
 			err := svc.MoveIssuesToEpic(context.Background(), epicKey, keys)
-			if err != nil {
-				fmt.Fprintln(os.Stderr, "error:", err)
-				os.Exit(agileExitCode(err))
-			}
+		auditLog.Log(audit.NewEntry("move_issues_to_epic", "agile",
+			map[string]any{"epic_key": epicKey, "issues": issuesFlag}, err))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(agileExitCode(err))
+		}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Moved %d issues to epic %s\n", len(keys), epicKey)
 			return nil
