@@ -151,7 +151,7 @@ func (s *GoalsGraphQLService) SearchGoals(ctx context.Context, req SearchGoalsRe
 
 	containerId := "ari:cloud:townsquare::site/" + req.SiteID
 
-	const query = `query SearchGoals($containerId: String!, $searchString: String, $first: Int, $after: String) {
+	const query = `query SearchGoals($containerId: ID!, $searchString: String, $first: Int, $after: String) {
   goals_search(containerId: $containerId, searchString: $searchString, first: $first, after: $after, sort: [NAME_ASC]) {
     edges {
       node {
