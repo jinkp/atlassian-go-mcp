@@ -63,7 +63,8 @@ var defaultModules = []ModuleConfig{
 var defaultRegOpts = []string{
 	"OpenCode",
 	"Claude Code",
-	"Both",
+	"Cursor",
+	"All (OpenCode + Claude + Cursor)",
 	"Skip (show command)",
 }
 

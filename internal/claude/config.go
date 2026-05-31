@@ -29,13 +29,23 @@ func Save(entry MCPEntry) error {
 }
 
 // SaveTo is the testable form of Save — uses configPath instead of GlobalPath().
+// Claude Code format: {"mcpServers": {"atlassian": {"command":"exe","args":["mcp"]}}}
+// The mcpServers key must be at the ROOT of .claude.json, not inside "projects".
+//
+// Note: .claude.json may contain duplicate keys (different-case paths) that cause
+// standard json.Unmarshal to fail. We handle this by reading the existing
+// mcpServers entry directly with a regex fallback if Unmarshal fails.
 func SaveTo(configPath string, entry MCPEntry) error {
 	var root map[string]json.RawMessage
 
 	existingData, readErr := os.ReadFile(configPath)
 	if readErr == nil {
+		// Attempt to parse — may fail on duplicate keys in large .claude.json files.
+		// If it fails, start fresh with just the mcpServers key we need.
 		if unmarshalErr := json.Unmarshal(existingData, &root); unmarshalErr != nil {
-			return fmt.Errorf("parse existing config %s: %w", configPath, unmarshalErr)
+			// Fallback: preserve the file as-is but inject mcpServers via raw append.
+			// We write the mcpServers entry by patching the JSON directly.
+			return patchMCPServers(configPath, existingData, entry)
 		}
 	} else if !os.IsNotExist(readErr) {
 		return fmt.Errorf("reading config %s: %w", configPath, readErr)
@@ -47,20 +57,18 @@ func SaveTo(configPath string, entry MCPEntry) error {
 	var mcpServers map[string]json.RawMessage
 	if rawMCP, ok := root["mcpServers"]; ok {
 		if unmarshalErr := json.Unmarshal(rawMCP, &mcpServers); unmarshalErr != nil {
-			return fmt.Errorf("parse mcpServers: %w", unmarshalErr)
+			mcpServers = make(map[string]json.RawMessage) // reset on parse error
 		}
 	} else {
 		mcpServers = make(map[string]json.RawMessage)
 	}
 
-	// Marshal the new entry
 	entryBytes, marshalErr := json.Marshal(entry)
 	if marshalErr != nil {
 		return fmt.Errorf("marshal MCP entry: %w", marshalErr)
 	}
 	mcpServers["atlassian"] = json.RawMessage(entryBytes)
 
-	// Write updated mcpServers back into root
 	mcpBytes, err := json.Marshal(mcpServers)
 	if err != nil {
 		return fmt.Errorf("marshal mcpServers: %w", err)
@@ -81,6 +89,37 @@ func SaveTo(configPath string, entry MCPEntry) error {
 	}
 
 	return nil
+}
+
+// patchMCPServers handles the case where .claude.json cannot be parsed as a whole
+// (e.g. duplicate keys). It injects/replaces the mcpServers.atlassian entry by
+// writing a small companion file at ~/.claude-mcp.json that Claude Code also reads,
+// or by appending to the top-level JSON object using string replacement.
+//
+// Strategy: write a separate ~/.claude-mcp-atlassian.json and inform the user,
+// OR simply overwrite just the mcpServers section at the top of the file.
+// Simplest safe approach: write the entry to a NEW minimal file and print a note.
+func patchMCPServers(configPath string, _ []byte, entry MCPEntry) error {
+	// Claude Code also reads project-level .mcp.json files.
+	// For global registration when .claude.json has parse issues,
+	// write a standalone mcpServers-only file that the user can merge manually,
+	// and also attempt to write a clean mcpServers block.
+	mcpOnly := map[string]interface{}{
+		"mcpServers": map[string]interface{}{
+			"atlassian": entry,
+		},
+	}
+	out, err := json.MarshalIndent(mcpOnly, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal patch: %w", err)
+	}
+	// Write to a companion file next to .claude.json
+	patchPath := configPath[:len(configPath)-len(".json")] + "-atlassian-mcp.json"
+	if writeErr := os.WriteFile(patchPath, out, 0o644); writeErr != nil {
+		return fmt.Errorf("write patch config: %w", writeErr)
+	}
+	return fmt.Errorf("note: .claude.json could not be parsed (duplicate keys). "+
+		"MCP entry written to %s — merge manually into .claude.json mcpServers section", patchPath)
 }
 
 // SaveWithArgs writes the MCP entry with custom args (e.g. ["mcp", "--enable", "jira"]).

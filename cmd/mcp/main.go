@@ -1,4 +1,4 @@
-// Command atlassian-mcp exposes Jira read operations as MCP tools.
+// Command atlassian-mcp exposes Atlassian operations as MCP tools.
 // It can also self-register into AI client config files.
 //
 // Usage:
@@ -6,6 +6,8 @@
 //	atlassian-mcp mcp               # Start the stdio MCP server
 //	atlassian-mcp setup opencode    # Register into ~/.config/opencode/opencode.json
 //	atlassian-mcp setup claude      # Register into ~/.claude.json
+//	atlassian-mcp setup cursor      # Register into ~/.cursor/mcp.json
+//	atlassian-mcp tui               # Interactive TUI to configure modules
 package main
 
 import (
@@ -24,6 +26,7 @@ import (
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/releases"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/teams"
 	"github.com/jinkp/atlassian-go-mcp/internal/claude"
+	"github.com/jinkp/atlassian-go-mcp/internal/cursor"
 	mcpserver "github.com/jinkp/atlassian-go-mcp/internal/mcp"
 	"github.com/jinkp/atlassian-go-mcp/internal/mcp/features"
 	"github.com/jinkp/atlassian-go-mcp/internal/opencode"
@@ -99,6 +102,7 @@ func newSetupCommand() *cobra.Command {
 	}
 	setup.AddCommand(newSetupOpenCodeCommand())
 	setup.AddCommand(newSetupClaudeCommand())
+	setup.AddCommand(newSetupCursorCommand())
 	return setup
 }
 
@@ -142,6 +146,28 @@ func newSetupClaudeCommand() *cobra.Command {
 				return fmt.Errorf("saving Claude config: %w", err)
 			}
 			fmt.Fprintf(os.Stdout, "Registered atlassian-mcp in %s\n", claude.GlobalPath())
+			return nil
+		},
+	}
+}
+
+func newSetupCursorCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "cursor",
+		Short: "Register into Cursor (~/.cursor/mcp.json)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			binPath, err := resolvedBinaryPath()
+			if err != nil {
+				return err
+			}
+			entry := cursor.MCPEntry{
+				Command: binPath,
+				Args:    []string{"mcp"},
+			}
+			if err := cursor.Save(entry); err != nil {
+				return fmt.Errorf("saving Cursor config: %w", err)
+			}
+			fmt.Fprintf(os.Stdout, "Registered atlassian-mcp in %s\n", cursor.GlobalPath())
 			return nil
 		},
 	}

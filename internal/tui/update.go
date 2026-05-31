@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/jinkp/atlassian-go-mcp/internal/claude"
+	"github.com/jinkp/atlassian-go-mcp/internal/cursor"
 	"github.com/jinkp/atlassian-go-mcp/internal/opencode"
 )
 
@@ -144,27 +145,41 @@ func (m Model) executeRegistration() Model {
 
 	selected := m.regOpts[m.regCursor]
 
+	var errs []string
+	addErr := func(msg string) { errs = append(errs, msg) }
+
 	switch selected {
 	case "OpenCode":
 		if err := opencode.SaveWithArgs(args); err != nil {
-			m.errMsg = fmt.Sprintf("OpenCode registration failed: %v", err)
+			addErr(fmt.Sprintf("OpenCode: %v", err))
 		}
 	case "Claude Code":
 		if err := claude.SaveWithArgs(args); err != nil {
-			m.errMsg = fmt.Sprintf("Claude registration failed: %v", err)
+			addErr(fmt.Sprintf("Claude: %v", err))
 		}
-	case "Both":
+	case "Cursor":
+		if err := cursor.SaveWithArgs(args); err != nil {
+			addErr(fmt.Sprintf("Cursor: %v", err))
+		}
+	case "All (OpenCode + Claude + Cursor)":
 		if err := opencode.SaveWithArgs(args); err != nil {
-			m.errMsg = fmt.Sprintf("OpenCode registration failed: %v", err)
+			addErr(fmt.Sprintf("OpenCode: %v", err))
 		}
 		if err := claude.SaveWithArgs(args); err != nil {
-			if m.errMsg != "" {
-				m.errMsg += "; "
-			}
-			m.errMsg += fmt.Sprintf("Claude registration failed: %v", err)
+			addErr(fmt.Sprintf("Claude: %v", err))
+		}
+		if err := cursor.SaveWithArgs(args); err != nil {
+			addErr(fmt.Sprintf("Cursor: %v", err))
 		}
 	case "Skip (show command)":
 		// no file I/O — just show the command
+	}
+
+	if len(errs) > 0 {
+		m.errMsg = errs[0]
+		for _, e := range errs[1:] {
+			m.errMsg += "; " + e
+		}
 	}
 
 	return m

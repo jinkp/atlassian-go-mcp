@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -22,22 +21,18 @@ func TestGlobalPath(t *testing.T) {
 	if !strings.HasSuffix(path, "opencode.json") {
 		t.Errorf("GlobalPath() %q does not end with 'opencode.json'", path)
 	}
-	// Platform-specific directory check
-	if runtime.GOOS == "windows" {
-		if !strings.Contains(path, "OpenCode") {
-			t.Errorf("Windows GlobalPath() %q does not contain 'OpenCode'", path)
-		}
-	} else {
-		if !strings.Contains(path, ".config") {
-			t.Errorf("Unix GlobalPath() %q does not contain '.config'", path)
-		}
+	// Always under ~/.config/opencode/ on all platforms
+	if !strings.Contains(path, ".config") {
+		t.Errorf("GlobalPath() %q does not contain '.config'", path)
 	}
 }
 
 // --- TestSave ---
+// OpenCode format: {"mcp": {"atlassian": {"type":"local","command":["exe","mcp"]}}}
 
 func TestSave(t *testing.T) {
 	entry := opencode.MCPEntry{
+		Type:    "local",
 		Command: "/usr/local/bin/atlassian-mcp",
 		Args:    []string{"mcp"},
 	}
@@ -61,16 +56,32 @@ func TestSave(t *testing.T) {
 			t.Fatalf("written file is not valid JSON: %v", jsonErr)
 		}
 
-		mcpRaw, ok := parsed["mcpServers"]
+		// OpenCode uses "mcp" key (not "mcpServers")
+		mcpRaw, ok := parsed["mcp"]
 		if !ok {
-			t.Fatal("written JSON does not contain 'mcpServers' key")
+			t.Fatal("written JSON does not contain 'mcp' key")
 		}
-		var mcpServers map[string]json.RawMessage
-		if jsonErr := json.Unmarshal(mcpRaw, &mcpServers); jsonErr != nil {
-			t.Fatalf("mcpServers is not a JSON object: %v", jsonErr)
+		var mcpSection map[string]json.RawMessage
+		if jsonErr := json.Unmarshal(mcpRaw, &mcpSection); jsonErr != nil {
+			t.Fatalf("mcp is not a JSON object: %v", jsonErr)
 		}
-		if _, ok := mcpServers["atlassian"]; !ok {
-			t.Error("mcpServers does not contain 'atlassian' entry")
+		if _, ok := mcpSection["atlassian"]; !ok {
+			t.Error("mcp does not contain 'atlassian' entry")
+		}
+
+		// Verify command is an array (not a string)
+		var atlEntry struct {
+			Type    string   `json:"type"`
+			Command []string `json:"command"`
+		}
+		if err := json.Unmarshal(mcpSection["atlassian"], &atlEntry); err != nil {
+			t.Fatalf("atlassian entry is not valid JSON: %v", err)
+		}
+		if atlEntry.Type != "local" {
+			t.Errorf("expected type=local, got %q", atlEntry.Type)
+		}
+		if len(atlEntry.Command) < 2 {
+			t.Errorf("command should be [exe, mcp, ...], got %v", atlEntry.Command)
 		}
 	})
 
@@ -78,8 +89,8 @@ func TestSave(t *testing.T) {
 		dir := t.TempDir()
 		configPath := filepath.Join(dir, "opencode.json")
 
-		// Write an existing config with unrelated keys
-		existing := `{"theme":"dark","mcpServers":{"other-tool":{"command":"other"}}}`
+		// Write an existing config with unrelated keys and another mcp server
+		existing := `{"theme":"dark","mcp":{"other-tool":{"type":"local","command":["other"]}}}`
 		if writeErr := os.WriteFile(configPath, []byte(existing), 0o644); writeErr != nil {
 			t.Fatalf("setup: WriteFile: %v", writeErr)
 		}
@@ -99,14 +110,14 @@ func TestSave(t *testing.T) {
 		}
 
 		// other-tool must be preserved
-		mcpRaw := parsed["mcpServers"]
-		var mcpServers map[string]json.RawMessage
-		_ = json.Unmarshal(mcpRaw, &mcpServers)
-		if _, ok := mcpServers["other-tool"]; !ok {
-			t.Error("merge destroyed 'mcpServers.other-tool' entry")
+		mcpRaw := parsed["mcp"]
+		var mcpSection map[string]json.RawMessage
+		_ = json.Unmarshal(mcpRaw, &mcpSection)
+		if _, ok := mcpSection["other-tool"]; !ok {
+			t.Error("merge destroyed 'mcp.other-tool' entry")
 		}
-		if _, ok := mcpServers["atlassian"]; !ok {
-			t.Error("merge did not add 'mcpServers.atlassian' entry")
+		if _, ok := mcpSection["atlassian"]; !ok {
+			t.Error("merge did not add 'mcp.atlassian' entry")
 		}
 	})
 
@@ -126,13 +137,13 @@ func TestSave(t *testing.T) {
 		var parsed map[string]json.RawMessage
 		_ = json.Unmarshal(data, &parsed)
 
-		mcpRaw := parsed["mcpServers"]
-		var mcpServers map[string]json.RawMessage
-		_ = json.Unmarshal(mcpRaw, &mcpServers)
+		mcpRaw := parsed["mcp"]
+		var mcpSection map[string]json.RawMessage
+		_ = json.Unmarshal(mcpRaw, &mcpSection)
 
 		// Exactly one atlassian entry — not duplicated
-		if count := len(mcpServers); count != 1 {
-			t.Errorf("expected exactly 1 mcpServers entry after double save, got %d", count)
+		if count := len(mcpSection); count != 1 {
+			t.Errorf("expected exactly 1 mcp entry after double save, got %d", count)
 		}
 	})
 
