@@ -23,6 +23,27 @@ func GlobalPath() string {
 	return filepath.Join(home, ".config", "opencode", "opencode.json")
 }
 
+// LocalPath returns the path to the OpenCode project-level configuration file.
+// OpenCode loads ./opencode.json from the current working directory.
+func LocalPath() string {
+	cwd, _ := os.Getwd()
+	return filepath.Join(cwd, "opencode.json")
+}
+
+// SaveLocal writes the MCP entry to the local project config (./opencode.json).
+func SaveLocal(entry MCPEntry) error {
+	return SaveTo(LocalPath(), entry)
+}
+
+// SaveWithArgsLocal writes with custom args to the local project config.
+func SaveWithArgsLocal(args []string) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolving binary path: %w", err)
+	}
+	return SaveLocal(MCPEntry{Type: "local", Command: exe, Args: args})
+}
+
 // opencodeMCPEntry is the format OpenCode expects under the "mcp" key.
 // Command is a []string (binary + args combined), not a separate args field.
 // enabled:true is required for OpenCode to load the server on startup.
@@ -35,7 +56,7 @@ type opencodeMCPEntry struct {
 
 // Save writes entry under mcp.atlassian in the GlobalPath() file,
 // merging with any existing content and preserving unrelated keys.
-// OpenCode format: {"mcp": {"atlassian": {"type":"local","command":["exe","mcp"]}}}
+// OpenCode format: {"mcp": {"atlassian-platform-connector": {"type":"local","command":["exe","mcp"]}}}
 func Save(entry MCPEntry) error {
 	return SaveTo(GlobalPath(), entry)
 }
@@ -82,7 +103,7 @@ func SaveTo(configPath string, entry MCPEntry) error {
 	if marshalErr != nil {
 		return fmt.Errorf("marshal MCP entry: %w", marshalErr)
 	}
-	mcpSection["atlassian"] = json.RawMessage(entryBytes)
+	mcpSection["atlassian-platform-connector"] = json.RawMessage(entryBytes)
 
 	mcpBytes, err := json.Marshal(mcpSection)
 	if err != nil {

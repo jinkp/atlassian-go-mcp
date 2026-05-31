@@ -56,7 +56,7 @@ func WriteGuardCheck() error {
 // log receives an entry for every write operation (after WriteGuardCheck passes).
 func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc goals.GoalsService, releasesSvc releases.ReleasesService, projectsSvc projects.ProjectsService, teamsSvc teams.TeamsService, log audit.Logger, fs *features.FeatureSet) *server.MCPServer {
 	s := server.NewMCPServer(
-		"atlassian",
+		"atlassian-platform-connector",
 		"1.0.0",
 		server.WithToolCapabilities(true),
 	)

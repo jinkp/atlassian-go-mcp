@@ -58,7 +58,7 @@ func TestSave(t *testing.T) {
 		if jsonErr := json.Unmarshal(mcpRaw, &mcpServers); jsonErr != nil {
 			t.Fatalf("mcpServers is not a JSON object: %v", jsonErr)
 		}
-		if _, ok := mcpServers["atlassian"]; !ok {
+		if _, ok := mcpServers["atlassian-platform-connector"]; !ok {
 			t.Error("mcpServers does not contain 'atlassian' entry")
 		}
 	})
@@ -93,7 +93,7 @@ func TestSave(t *testing.T) {
 		if _, ok := mcpServers["existing"]; !ok {
 			t.Error("merge destroyed 'mcpServers.existing' entry")
 		}
-		if _, ok := mcpServers["atlassian"]; !ok {
+		if _, ok := mcpServers["atlassian-platform-connector"]; !ok {
 			t.Error("merge did not add 'mcpServers.atlassian' entry")
 		}
 	})

@@ -45,7 +45,7 @@ func GlobalPath() string {
 //
 //	{
 //	  "mcpServers": {
-//	    "atlassian": {"command": "exe", "args": ["mcp"]}
+//	    "atlassian-platform-connector": {"command": "exe", "args": ["mcp"]}
 //	  },
 //	  "preferences": { ... },   <- preserved
 //	  "coworkUserFilesPath": "...", <- preserved
@@ -86,7 +86,7 @@ func SaveTo(configPath string, entry MCPEntry) error {
 	if marshalErr != nil {
 		return fmt.Errorf("marshal claude desktop MCP entry: %w", marshalErr)
 	}
-	mcpServers["atlassian"] = json.RawMessage(entryBytes)
+	mcpServers["atlassian-platform-connector"] = json.RawMessage(entryBytes)
 
 	mcpBytes, err := json.Marshal(mcpServers)
 	if err != nil {

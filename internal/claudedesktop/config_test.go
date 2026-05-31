@@ -45,7 +45,7 @@ func TestSaveTo_FreshFile(t *testing.T) {
 	}
 	var servers map[string]json.RawMessage
 	_ = json.Unmarshal(root["mcpServers"], &servers)
-	if _, ok := servers["atlassian"]; !ok {
+	if _, ok := servers["atlassian-platform-connector"]; !ok {
 		t.Fatal("missing atlassian entry")
 	}
 }
@@ -92,7 +92,7 @@ func TestSaveTo_PreservesAllExistingKeys(t *testing.T) {
 	if _, ok := servers["other-server"]; !ok {
 		t.Error("other-server was deleted")
 	}
-	if _, ok := servers["atlassian"]; !ok {
+	if _, ok := servers["atlassian-platform-connector"]; !ok {
 		t.Error("atlassian entry not written")
 	}
 }

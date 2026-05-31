@@ -67,7 +67,7 @@ func TestSaveTo_MergePreservesExistingKeys(t *testing.T) {
 	if _, ok := root.MCPServers["other-server"]; !ok {
 		t.Error("existing server was overwritten")
 	}
-	if _, ok := root.MCPServers["atlassian"]; !ok {
+	if _, ok := root.MCPServers["atlassian-platform-connector"]; !ok {
 		t.Error("atlassian entry not written")
 	}
 }

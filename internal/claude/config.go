@@ -22,6 +22,27 @@ func GlobalPath() string {
 	return filepath.Join(home, ".claude.json")
 }
 
+// LocalPath returns the path to the Claude Code project-level config.
+// Claude Code loads .claude/settings.json from the current working directory.
+func LocalPath() string {
+	cwd, _ := os.Getwd()
+	return filepath.Join(cwd, ".claude", "settings.json")
+}
+
+// SaveLocal writes the MCP entry to the local project config (./.claude/settings.json).
+func SaveLocal(entry MCPEntry) error {
+	return SaveTo(LocalPath(), entry)
+}
+
+// SaveWithArgsLocal writes with custom args to the local project config.
+func SaveWithArgsLocal(args []string) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolving binary path: %w", err)
+	}
+	return SaveLocal(MCPEntry{Command: exe, Args: args})
+}
+
 // Save writes entry under mcpServers.atlassian in the GlobalPath() file,
 // merging with any existing content and preserving unrelated keys.
 func Save(entry MCPEntry) error {
@@ -29,7 +50,7 @@ func Save(entry MCPEntry) error {
 }
 
 // SaveTo is the testable form of Save — uses configPath instead of GlobalPath().
-// Claude Code format: {"mcpServers": {"atlassian": {"command":"exe","args":["mcp"]}}}
+// Claude Code format: {"mcpServers": {"atlassian-platform-connector": {"command":"exe","args":["mcp"]}}}
 // The mcpServers key must be at the ROOT of .claude.json, not inside "projects".
 //
 // Note: .claude.json may contain duplicate keys (different-case paths) that cause
@@ -67,7 +88,7 @@ func SaveTo(configPath string, entry MCPEntry) error {
 	if marshalErr != nil {
 		return fmt.Errorf("marshal MCP entry: %w", marshalErr)
 	}
-	mcpServers["atlassian"] = json.RawMessage(entryBytes)
+	mcpServers["atlassian-platform-connector"] = json.RawMessage(entryBytes)
 
 	mcpBytes, err := json.Marshal(mcpServers)
 	if err != nil {
@@ -106,7 +127,7 @@ func patchMCPServers(configPath string, _ []byte, entry MCPEntry) error {
 	// and also attempt to write a clean mcpServers block.
 	mcpOnly := map[string]interface{}{
 		"mcpServers": map[string]interface{}{
-			"atlassian": entry,
+			"atlassian-platform-connector": entry,
 		},
 	}
 	out, err := json.MarshalIndent(mcpOnly, "", "  ")

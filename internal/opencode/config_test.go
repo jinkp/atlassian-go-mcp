@@ -28,7 +28,7 @@ func TestGlobalPath(t *testing.T) {
 }
 
 // --- TestSave ---
-// OpenCode format: {"mcp": {"atlassian": {"type":"local","command":["exe","mcp"]}}}
+// OpenCode format: {"mcp": {"atlassian-platform-connector": {"type":"local","command":["exe","mcp"]}}}
 
 func TestSave(t *testing.T) {
 	entry := opencode.MCPEntry{
@@ -65,7 +65,7 @@ func TestSave(t *testing.T) {
 		if jsonErr := json.Unmarshal(mcpRaw, &mcpSection); jsonErr != nil {
 			t.Fatalf("mcp is not a JSON object: %v", jsonErr)
 		}
-		if _, ok := mcpSection["atlassian"]; !ok {
+		if _, ok := mcpSection["atlassian-platform-connector"]; !ok {
 			t.Error("mcp does not contain 'atlassian' entry")
 		}
 
@@ -75,7 +75,7 @@ func TestSave(t *testing.T) {
 			Command []string `json:"command"`
 			Enabled bool     `json:"enabled"`
 		}
-		if err := json.Unmarshal(mcpSection["atlassian"], &atlEntry); err != nil {
+		if err := json.Unmarshal(mcpSection["atlassian-platform-connector"], &atlEntry); err != nil {
 			t.Fatalf("atlassian entry is not valid JSON: %v", err)
 		}
 		if atlEntry.Type != "local" {
@@ -120,7 +120,7 @@ func TestSave(t *testing.T) {
 		if _, ok := mcpSection["other-tool"]; !ok {
 			t.Error("merge destroyed 'mcp.other-tool' entry")
 		}
-		if _, ok := mcpSection["atlassian"]; !ok {
+		if _, ok := mcpSection["atlassian-platform-connector"]; !ok {
 			t.Error("merge did not add 'mcp.atlassian' entry")
 		}
 	})

@@ -3,17 +3,20 @@
 //
 // Usage:
 //
-//	atlassian-mcp mcp               # Start the stdio MCP server
-//	atlassian-mcp setup opencode    # Register into ~/.config/opencode/opencode.json
-//	atlassian-mcp setup claude      # Register into ~/.claude.json
-//	atlassian-mcp setup cursor      # Register into ~/.cursor/mcp.json
-//	atlassian-mcp tui               # Interactive TUI to configure modules
+//	atlassian-mcp mcp                            # Start the stdio MCP server
+//	atlassian-mcp setup opencode [--scope local] # Register into OpenCode config
+//	atlassian-mcp setup claude   [--scope local] # Register into Claude Code config
+//	atlassian-mcp setup claude-desktop           # Register into Claude Desktop config
+//	atlassian-mcp setup cursor   [--scope local] # Register into Cursor config
+//	atlassian-mcp tui                            # Interactive TUI to configure modules
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -32,6 +35,50 @@ import (
 	"github.com/jinkp/atlassian-go-mcp/internal/mcp/features"
 	"github.com/jinkp/atlassian-go-mcp/internal/opencode"
 )
+
+// setupRecord is saved to engram after a successful registration.
+type setupRecord struct {
+	Client    string    `json:"client"`
+	Scope     string    `json:"scope"`
+	ConfigPath string   `json:"config_path"`
+	Args      []string  `json:"args"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+// saveSetupToEngram writes the registration record to ~/.mcp/atlassian/setup-history.json
+// so users can recall which clients are configured.
+func saveSetupToEngram(record setupRecord) {
+	historyPath := func() string {
+		home, _ := os.UserHomeDir()
+		return fmt.Sprintf("%s/.mcp/atlassian/setup-history.json", home)
+	}()
+
+	var records []setupRecord
+	if data, err := os.ReadFile(historyPath); err == nil {
+		_ = json.Unmarshal(data, &records)
+	}
+
+	// Replace existing entry for same client+scope, or append
+	found := false
+	for i, r := range records {
+		if r.Client == record.Client && r.Scope == record.Scope {
+			records[i] = record
+			found = true
+			break
+		}
+	}
+	if !found {
+		records = append(records, record)
+	}
+
+	if data, err := json.MarshalIndent(records, "", "  "); err == nil {
+		_ = os.MkdirAll(fmt.Sprintf("%s/.mcp/atlassian", func() string {
+			home, _ := os.UserHomeDir()
+			return home
+		}()), 0o755)
+		_ = os.WriteFile(historyPath, data, 0o644)
+	}
+}
 
 func main() {
 	// FIRST STATEMENT — redirect all log output to stderr before any cobra wiring.
@@ -109,92 +156,130 @@ func newSetupCommand() *cobra.Command {
 }
 
 func newSetupOpenCodeCommand() *cobra.Command {
-	return &cobra.Command{
+	var scope string
+	cmd := &cobra.Command{
 		Use:   "opencode",
-		Short: "Register into OpenCode (~/.config/opencode/opencode.json)",
+		Short: "Register into OpenCode config",
+		Long: `Register atlassian-platform-connector into OpenCode.
+
+  Global (default): ~/.config/opencode/opencode.json
+  Local:            ./opencode.json  (current project only)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			binPath, err := resolvedBinaryPath()
 			if err != nil {
 				return err
 			}
-			entry := opencode.MCPEntry{
-				Type:    "local",
-				Command: binPath,
-				Args:    []string{"mcp"},
+			entry := opencode.MCPEntry{Type: "local", Command: binPath, Args: []string{"mcp"}}
+			var configPath string
+			if scope == "local" {
+				configPath = opencode.LocalPath()
+				err = opencode.SaveLocal(entry)
+			} else {
+				configPath = opencode.GlobalPath()
+				err = opencode.Save(entry)
 			}
-			if err := opencode.Save(entry); err != nil {
+			if err != nil {
 				return fmt.Errorf("saving OpenCode config: %w", err)
 			}
-			fmt.Fprintf(os.Stdout, "Registered atlassian-mcp in %s\n", opencode.GlobalPath())
+			fmt.Fprintf(os.Stdout, "Registered atlassian-platform-connector in %s\n", configPath)
+			saveSetupToEngram(setupRecord{Client: "opencode", Scope: scope, ConfigPath: configPath, Args: []string{"mcp"}, Timestamp: time.Now()})
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&scope, "scope", "global", "Where to register: global (default) or local (current project)")
+	return cmd
 }
 
 func newSetupClaudeCommand() *cobra.Command {
-	return &cobra.Command{
+	var scope string
+	cmd := &cobra.Command{
 		Use:   "claude",
-		Short: "Register into Claude Code (~/.claude.json)",
+		Short: "Register into Claude Code config",
+		Long: `Register atlassian-platform-connector into Claude Code (CLI).
+
+  Global (default): ~/.claude.json
+  Local:            ./.claude/settings.json  (current project only)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			binPath, err := resolvedBinaryPath()
 			if err != nil {
 				return err
 			}
-			entry := claude.MCPEntry{
-				Command: binPath,
-				Args:    []string{"mcp"},
+			entry := claude.MCPEntry{Command: binPath, Args: []string{"mcp"}}
+			var configPath string
+			if scope == "local" {
+				configPath = claude.LocalPath()
+				err = claude.SaveLocal(entry)
+			} else {
+				configPath = claude.GlobalPath()
+				err = claude.Save(entry)
 			}
-			if err := claude.Save(entry); err != nil {
+			if err != nil {
 				return fmt.Errorf("saving Claude config: %w", err)
 			}
-			fmt.Fprintf(os.Stdout, "Registered atlassian-mcp in %s\n", claude.GlobalPath())
+			fmt.Fprintf(os.Stdout, "Registered atlassian-platform-connector in %s\n", configPath)
+			saveSetupToEngram(setupRecord{Client: "claude", Scope: scope, ConfigPath: configPath, Args: []string{"mcp"}, Timestamp: time.Now()})
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&scope, "scope", "global", "Where to register: global (default) or local (current project)")
+	return cmd
 }
 
 func newSetupClaudeDesktopCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "claude-desktop",
-		Short: "Register into Claude Desktop (%APPDATA%\\Claude\\claude_desktop_config.json)",
+		Short: "Register into Claude Desktop (global only)",
+		Long:  `Register atlassian-platform-connector into Claude Desktop. Global only: %APPDATA%\Claude\claude_desktop_config.json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			binPath, err := resolvedBinaryPath()
 			if err != nil {
 				return err
 			}
-			entry := claudedesktop.MCPEntry{
-				Command: binPath,
-				Args:    []string{"mcp"},
-			}
+			entry := claudedesktop.MCPEntry{Command: binPath, Args: []string{"mcp"}}
+			configPath := claudedesktop.GlobalPath()
 			if err := claudedesktop.Save(entry); err != nil {
 				return fmt.Errorf("saving Claude Desktop config: %w", err)
 			}
-			fmt.Fprintf(os.Stdout, "Registered atlassian-mcp in %s\n", claudedesktop.GlobalPath())
+			fmt.Fprintf(os.Stdout, "Registered atlassian-platform-connector in %s\n", configPath)
+			saveSetupToEngram(setupRecord{Client: "claude-desktop", Scope: "global", ConfigPath: configPath, Args: []string{"mcp"}, Timestamp: time.Now()})
 			return nil
 		},
 	}
 }
 
 func newSetupCursorCommand() *cobra.Command {
-	return &cobra.Command{
+	var scope string
+	cmd := &cobra.Command{
 		Use:   "cursor",
-		Short: "Register into Cursor (~/.cursor/mcp.json)",
+		Short: "Register into Cursor config",
+		Long: `Register atlassian-platform-connector into Cursor.
+
+  Global (default): ~/.cursor/mcp.json
+  Local:            ./.cursor/mcp.json  (current project only)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			binPath, err := resolvedBinaryPath()
 			if err != nil {
 				return err
 			}
-			entry := cursor.MCPEntry{
-				Command: binPath,
-				Args:    []string{"mcp"},
+			entry := cursor.MCPEntry{Command: binPath, Args: []string{"mcp"}}
+			var configPath string
+			if scope == "local" {
+				configPath = cursor.LocalPath()
+				err = cursor.SaveLocal(entry)
+			} else {
+				configPath = cursor.GlobalPath()
+				err = cursor.Save(entry)
 			}
-			if err := cursor.Save(entry); err != nil {
+			if err != nil {
 				return fmt.Errorf("saving Cursor config: %w", err)
 			}
-			fmt.Fprintf(os.Stdout, "Registered atlassian-mcp in %s\n", cursor.GlobalPath())
+			fmt.Fprintf(os.Stdout, "Registered atlassian-platform-connector in %s\n", configPath)
+			saveSetupToEngram(setupRecord{Client: "cursor", Scope: scope, ConfigPath: configPath, Args: []string{"mcp"}, Timestamp: time.Now()})
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&scope, "scope", "global", "Where to register: global (default) or local (current project)")
+	return cmd
 }
 
 // resolvedBinaryPath returns the absolute path of the running binary,

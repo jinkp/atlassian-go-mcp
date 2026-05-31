@@ -22,9 +22,30 @@ func GlobalPath() string {
 	return filepath.Join(home, ".cursor", "mcp.json")
 }
 
+// LocalPath returns the path to the Cursor project-level MCP config.
+// Cursor loads .cursor/mcp.json from the current working directory.
+func LocalPath() string {
+	cwd, _ := os.Getwd()
+	return filepath.Join(cwd, ".cursor", "mcp.json")
+}
+
+// SaveLocal writes the MCP entry to the local project config (./.cursor/mcp.json).
+func SaveLocal(entry MCPEntry) error {
+	return SaveTo(LocalPath(), entry)
+}
+
+// SaveWithArgsLocal writes with custom args to the local project config.
+func SaveWithArgsLocal(args []string) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolving binary path: %w", err)
+	}
+	return SaveLocal(MCPEntry{Command: exe, Args: args})
+}
+
 // Save writes entry under mcpServers.atlassian in the GlobalPath() file,
 // merging with any existing content and preserving unrelated keys.
-// Cursor format: {"mcpServers": {"atlassian": {"command":"exe","args":["mcp"]}}}
+// Cursor format: {"mcpServers": {"atlassian-platform-connector": {"command":"exe","args":["mcp"]}}}
 func Save(entry MCPEntry) error {
 	return SaveTo(GlobalPath(), entry)
 }
@@ -58,7 +79,7 @@ func SaveTo(configPath string, entry MCPEntry) error {
 	if marshalErr != nil {
 		return fmt.Errorf("marshal cursor MCP entry: %w", marshalErr)
 	}
-	mcpServers["atlassian"] = json.RawMessage(entryBytes)
+	mcpServers["atlassian-platform-connector"] = json.RawMessage(entryBytes)
 
 	mcpBytes, err := json.Marshal(mcpServers)
 	if err != nil {
