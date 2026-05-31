@@ -35,6 +35,7 @@ function Add-ToUserPath {
 Write-Host ""
 Write-Host "  Atlassian Platform Connector" -ForegroundColor White
 Write-Host "  ----------------------------" -ForegroundColor DarkGray
+Write-Host "  CLI + MCP Server + REST API for Atlassian Cloud" -ForegroundColor DarkGray
 Write-Host ""
 
 # -- Detect latest version ----------------------------------------------------
@@ -45,6 +46,13 @@ try {
 } catch {
     Write-Fail "Could not fetch release: $_"
     exit 1
+}
+
+# -- Check for existing installation -----------------------------------------
+$existingVersion = $null
+$mcpBin = Join-Path $InstallDir "atlassian-mcp.exe"
+if (Test-Path $mcpBin) {
+    Write-Step "Existing installation detected — upgrading"
 }
 
 # -- Create install directory -------------------------------------------------
@@ -100,7 +108,7 @@ if ($env:PATH -notlike "*$InstallDir*") {
 
 # -- Summary ------------------------------------------------------------------
 Write-Host ""
-Write-Host "  Installed:" -ForegroundColor White
+Write-Host "  Installed ($Version):" -ForegroundColor White
 foreach ($bin in $downloaded) {
     $path = Join-Path $InstallDir $bin
     Write-Host "    $bin" -ForegroundColor Green
@@ -109,17 +117,29 @@ foreach ($bin in $downloaded) {
 
 # -- Next steps ---------------------------------------------------------------
 Write-Host ""
-Write-Host "  Next steps:" -ForegroundColor White
+Write-Host "  Quick setup (recommended):" -ForegroundColor White
 Write-Host ""
-Write-Host "  1. Set your credentials (add to your profile for persistence):" -ForegroundColor DarkGray
+Write-Host "    atlassian-mcp tui" -ForegroundColor Green
+Write-Host ""
+Write-Host "    The interactive TUI guides you through:" -ForegroundColor DarkGray
+Write-Host "      1. Select which modules to enable (jira, agile, goals, etc.)" -ForegroundColor Gray
+Write-Host "      2. Enter your Atlassian credentials" -ForegroundColor Gray
+Write-Host "      3. Test connectivity to each service" -ForegroundColor Gray
+Write-Host "      4. Register the MCP server into your AI client" -ForegroundColor Gray
+Write-Host ""
+Write-Host "  Manual setup:" -ForegroundColor White
+Write-Host ""
+Write-Host "  1. Set your credentials:" -ForegroundColor DarkGray
 Write-Host '     $env:ATLASSIAN_BASE_URL = "https://your-org.atlassian.net"' -ForegroundColor Gray
 Write-Host '     $env:ATLASSIAN_EMAIL    = "you@company.com"' -ForegroundColor Gray
 Write-Host '     $env:ATLASSIAN_TOKEN    = "your-api-token"' -ForegroundColor Gray
+Write-Host '     # Get a token: https://id.atlassian.com/manage-profile/security/api-tokens' -ForegroundColor DarkGray
 Write-Host ""
-Write-Host "  2. Register MCP server with your AI client:" -ForegroundColor DarkGray
-Write-Host "     atlassian-mcp setup opencode    # OpenCode" -ForegroundColor Gray
-Write-Host "     atlassian-mcp setup claude      # Claude Code" -ForegroundColor Gray
-Write-Host "     atlassian-mcp tui               # Interactive TUI (configure modules)" -ForegroundColor Gray
+Write-Host "  2. Register MCP server into your AI client:" -ForegroundColor DarkGray
+Write-Host "     atlassian-mcp setup opencode          # OpenCode" -ForegroundColor Gray
+Write-Host "     atlassian-mcp setup claude             # Claude Code (CLI)" -ForegroundColor Gray
+Write-Host "     atlassian-mcp setup claude-desktop     # Claude Desktop" -ForegroundColor Gray
+Write-Host "     atlassian-mcp setup cursor             # Cursor" -ForegroundColor Gray
 Write-Host ""
 Write-Host "  3. Try the CLI:" -ForegroundColor DarkGray
 Write-Host '     atlassian jira search --jql "project=PROJ"' -ForegroundColor Gray

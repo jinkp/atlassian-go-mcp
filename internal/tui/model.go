@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/jinkp/atlassian-go-mcp/internal/envstore"
 	"github.com/jinkp/atlassian-go-mcp/internal/mcp/features"
 )
 
@@ -14,19 +15,43 @@ import (
 type Screen int
 
 const (
-	ScreenModules  Screen = iota // module checkbox selector
-	ScreenRegister               // OpenCode / Claude / Both / Skip
-	ScreenDone                   // success + command display
+	ScreenModules     Screen = iota // 1. module checkbox selector
+	ScreenCredentials               // 2. enter/review credentials
+	ScreenTest                      // 3. test connection per module
+	ScreenRegister                  // 4. client + scope selector
+	ScreenDone                      // 5. success + command display
 )
 
 // AccessLevel for the TUI — read-only or read+write.
-// (Write-only not supported in TUI.)
 type AccessLevel int
 
 const (
 	AccessRead      AccessLevel = 1
 	AccessReadWrite AccessLevel = 3
 )
+
+// Scope for registration — global or local (project-level).
+type Scope int
+
+const (
+	ScopeGlobal Scope = iota
+	ScopeLocal
+)
+
+func (s Scope) String() string {
+	if s == ScopeLocal {
+		return "local"
+	}
+	return "global"
+}
+
+// credField is a single input field on the credentials screen.
+type credField struct {
+	Key    string
+	Label  string
+	Value  string
+	Masked bool // true for token — display as ****
+}
 
 // ModuleConfig holds the display state of a single module row.
 type ModuleConfig struct {
@@ -35,21 +60,41 @@ type ModuleConfig struct {
 	Access  AccessLevel
 }
 
+// RegOption holds a registration target with its configurable scope.
+type RegOption struct {
+	Label      string
+	Client     string
+	Scope      Scope
+	GlobalOnly bool
+}
+
 // Model is the Bubbletea model for the TUI.
 type Model struct {
 	screen    Screen
 	modules   []ModuleConfig
 	cursor    int
-	regOpts   []string
+
+	// credentials screen
+	credFields  []credField
+	credCursor  int  // which field is focused
+	inputActive bool // are we typing into a field?
+
+	// test screen
+	testRunning bool
+	testResults []TestResult
+	testDone    bool
+
+	// register screen
+	regOpts   []RegOption
 	regCursor int
-	preview   string
-	doneMsg   string
-	errMsg    string
-	width     int
-	height    int
+
+	preview  string
+	doneMsg  string
+	errMsg   string
+	width    int
+	height   int
 }
 
-// defaultModules lists all 7 modules in canonical order, all enabled at RW.
 var defaultModules = []ModuleConfig{
 	{Name: features.ModuleJira, Enabled: true, Access: AccessReadWrite},
 	{Name: features.ModuleAgile, Enabled: true, Access: AccessReadWrite},
@@ -60,33 +105,42 @@ var defaultModules = []ModuleConfig{
 	{Name: features.ModuleTeams, Enabled: true, Access: AccessReadWrite},
 }
 
-var defaultRegOpts = []string{
-	"OpenCode",
-	"Claude Code (CLI)",
-	"Claude Desktop",
-	"Cursor",
-	"All (OpenCode + Claude Desktop + Cursor)",
-	"Skip (show command)",
+var defaultRegOpts = []RegOption{
+	{Label: "OpenCode", Client: "opencode", Scope: ScopeGlobal},
+	{Label: "Claude Code (CLI)", Client: "claude", Scope: ScopeGlobal},
+	{Label: "Claude Desktop", Client: "claude-desktop", Scope: ScopeGlobal, GlobalOnly: true},
+	{Label: "Cursor", Client: "cursor", Scope: ScopeGlobal},
+	{Label: "All (OpenCode + Claude Desktop + Cursor)", Client: "all", Scope: ScopeGlobal},
+	{Label: "Skip (show command)", Client: "skip", Scope: ScopeGlobal, GlobalOnly: true},
 }
 
-// NewModel creates and returns a fresh Model with all modules enabled at RW.
+// NewModel creates a fresh Model. Credentials are pre-loaded from .env / env vars.
 func NewModel() Model {
+	opts := make([]RegOption, len(defaultRegOpts))
+	copy(opts, defaultRegOpts)
+
+	creds := envstore.Load()
+
 	m := Model{
 		screen:  ScreenModules,
 		modules: make([]ModuleConfig, len(defaultModules)),
-		regOpts: defaultRegOpts,
+		regOpts: opts,
+		credFields: []credField{
+			{Key: envstore.KeyBaseURL, Label: "ATLASSIAN_BASE_URL", Value: creds.BaseURL},
+			{Key: envstore.KeyEmail, Label: "ATLASSIAN_EMAIL", Value: creds.Email},
+			{Key: envstore.KeyToken, Label: "ATLASSIAN_TOKEN", Value: creds.Token, Masked: true},
+			{Key: envstore.KeyOrgID, Label: "ATLASSIAN_ORG_ID (optional — Teams only)", Value: creds.OrgID},
+		},
 	}
 	copy(m.modules, defaultModules)
 	m.preview = m.buildPreview()
 	return m
 }
 
-// Init satisfies tea.Model.
+// Init satisfies tea.Model — starts a no-op.
 func (m Model) Init() tea.Cmd { return nil }
 
 // buildPreview constructs the --enable flag value from current module state.
-// Returns "all" when all modules are enabled at RW, "" when none enabled,
-// or a comma-joined token list in allModules order.
 func (m Model) buildPreview() string {
 	var parts []string
 	allRW := true
@@ -116,32 +170,58 @@ func (m Model) buildPreview() string {
 	return strings.Join(parts, ",")
 }
 
+// currentCreds assembles a Credentials from the credFields state.
+func (m Model) currentCreds() envstore.Credentials {
+	c := envstore.Credentials{}
+	for _, f := range m.credFields {
+		switch f.Key {
+		case envstore.KeyBaseURL:
+			c.BaseURL = f.Value
+		case envstore.KeyEmail:
+			c.Email = f.Value
+		case envstore.KeyToken:
+			c.Token = f.Value
+		case envstore.KeyOrgID:
+			c.OrgID = f.Value
+		}
+	}
+	return c
+}
+
 // --- Exported accessors for tests ---
 
-// Screen returns the current screen.
-func (m Model) Screen() Screen { return m.screen }
+func (m Model) Screen() Screen       { return m.screen }
+func (m Model) Cursor() int          { return m.cursor }
+func (m Model) Preview() string      { return m.preview }
+func (m Model) RegCursor() int       { return m.regCursor }
+func (m Model) DoneMsg() string      { return m.doneMsg }
+func (m Model) ErrMsg() string       { return m.errMsg }
+func (m Model) CredCursor() int      { return m.credCursor }
+func (m Model) InputActive() bool    { return m.inputActive }
+func (m Model) TestDone() bool       { return m.testDone }
+func (m Model) TestResults() []TestResult { return m.testResults }
 
-// Cursor returns the current row cursor in the module list.
-func (m Model) Cursor() int { return m.cursor }
+func (m Model) CredFields() []credField {
+	cp := make([]credField, len(m.credFields))
+	copy(cp, m.credFields)
+	return cp
+}
 
-// Preview returns the current --enable preview string.
-func (m Model) Preview() string { return m.preview }
-
-// Modules returns a copy of the module configurations.
 func (m Model) Modules() []ModuleConfig {
 	cp := make([]ModuleConfig, len(m.modules))
 	copy(cp, m.modules)
 	return cp
 }
 
-// RegOpts returns the registration option labels.
-func (m Model) RegOpts() []string { return m.regOpts }
+func (m Model) RegOpts() []RegOption {
+	cp := make([]RegOption, len(m.regOpts))
+	copy(cp, m.regOpts)
+	return cp
+}
 
-// RegCursor returns the current register screen cursor.
-func (m Model) RegCursor() int { return m.regCursor }
-
-// DoneMsg returns the done-screen message string.
-func (m Model) DoneMsg() string { return m.doneMsg }
-
-// ErrMsg returns the error message (if any).
-func (m Model) ErrMsg() string { return m.errMsg }
+// SimulateTestResults injects a testConnMsg into the model, allowing external
+// tests to bypass the async connectivity check. Returns the updated model.
+func (m Model) SimulateTestResults(results []TestResult) Model {
+	m2, _ := m.Update(testConnMsg{results: results})
+	return m2.(Model)
+}

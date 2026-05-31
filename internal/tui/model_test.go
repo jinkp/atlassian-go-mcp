@@ -174,34 +174,65 @@ func TestToggleAll_A(t *testing.T) {
 	}
 }
 
-// --- T6: Enter advances to register screen ---
+// helper: advance model through all screens to ScreenRegister using 's' to skip creds/test
+func advanceToRegister(m tui.Model) tui.Model {
+	// modules → credentials (enter)
+	m = pressKey(m, tea.KeyEnter)
+	// credentials → test (s = skip — starts async connectivity check)
+	m = pressRune(m, 's')
+	// Simulate the async testConnMsg completing (all modules pass)
+	m = m.SimulateTestResults([]tui.TestResult{
+		{Module: "jira", OK: true, Message: "authenticated"},
+	})
+	// test screen done → register (enter)
+	m = pressKey(m, tea.KeyEnter)
+	return m
+}
+
+// --- T6: Enter advances through screens ---
 
 func TestEnterAdvancesScreen(t *testing.T) {
 	m := tui.NewModel()
 
-	// T6.1: enter → ScreenRegister
+	// T6.1: enter on modules → ScreenCredentials
 	m2 := pressKey(m, tea.KeyEnter)
-	if m2.Screen() != tui.ScreenRegister {
-		t.Errorf("T6.1: screen after enter: got %d, want ScreenRegister(%d)", m2.Screen(), tui.ScreenRegister)
+	if m2.Screen() != tui.ScreenCredentials {
+		t.Errorf("T6.1: screen after enter on modules: got %d, want ScreenCredentials(%d)", m2.Screen(), tui.ScreenCredentials)
 	}
 
-	// T6.2: register options exist
-	opts := m2.RegOpts()
+	// T6.2: 's' on credentials → ScreenTest
+	m3 := pressRune(m2, 's')
+	if m3.Screen() != tui.ScreenTest {
+		t.Errorf("T6.2: screen after s on credentials: got %d, want ScreenTest(%d)", m3.Screen(), tui.ScreenTest)
+	}
+
+	// Simulate async connectivity tests completing
+	m3 = m3.SimulateTestResults([]tui.TestResult{
+		{Module: "jira", OK: true, Message: "authenticated"},
+	})
+
+	// T6.3: enter on test → ScreenRegister
+	m4 := pressKey(m3, tea.KeyEnter)
+	if m4.Screen() != tui.ScreenRegister {
+		t.Errorf("T6.3: screen after enter on test: got %d, want ScreenRegister(%d)", m4.Screen(), tui.ScreenRegister)
+	}
+
+	// T6.4: register options exist
+	opts := m4.RegOpts()
 	if len(opts) < 4 {
-		t.Errorf("T6.2: expected ≥4 register options, got %d", len(opts))
+		t.Errorf("T6.4: expected >=4 register options, got %d", len(opts))
 	}
 
-	// T6.3: regCursor starts at 0
-	if m2.RegCursor() != 0 {
-		t.Errorf("T6.3: regCursor: got %d, want 0", m2.RegCursor())
+	// T6.5: regCursor starts at 0
+	if m4.RegCursor() != 0 {
+		t.Errorf("T6.5: regCursor: got %d, want 0", m4.RegCursor())
 	}
 }
 
 // --- T7: Register screen navigation ---
 
 func TestRegisterNav(t *testing.T) {
-	m := tui.NewModel()
-	m = pressKey(m, tea.KeyEnter) // advance to ScreenRegister
+	m := advanceToRegister(tui.NewModel())
 
 	// T7.1: down moves regCursor
 	m2 := pressKey(m, tea.KeyDown)
@@ -225,18 +256,17 @@ func TestRegisterNav(t *testing.T) {
 		t.Errorf("T7.2: regCursor after up from 0: got %d, want %d", m3.RegCursor(), wantLast)
 	}
 
-	// T7.3: esc → back to ScreenModules
+	// T7.3: esc → back to ScreenTest
 	m4 := pressKey(m, tea.KeyEsc)
-	if m4.Screen() != tui.ScreenModules {
-		t.Errorf("T7.3: esc should go back to ScreenModules, got %d", m4.Screen())
+	if m4.Screen() != tui.ScreenTest {
+		t.Errorf("T7.3: esc from register should go to ScreenTest, got %d", m4.Screen())
 	}
 }
 
 // --- T8: Register enter → done screen ---
 
 func TestRegisterEnter(t *testing.T) {
-	m := tui.NewModel()
-	m = pressKey(m, tea.KeyEnter) // → ScreenRegister
+	m := advanceToRegister(tui.NewModel())
 
 	// Navigate to "Skip" (last option)
 	skipIdx := len(m.RegOpts()) - 1
