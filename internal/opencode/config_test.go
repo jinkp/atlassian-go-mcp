@@ -69,10 +69,11 @@ func TestSave(t *testing.T) {
 			t.Error("mcp does not contain 'atlassian' entry")
 		}
 
-		// Verify command is an array (not a string)
+		// Verify command is an array (not a string) and enabled=true
 		var atlEntry struct {
 			Type    string   `json:"type"`
 			Command []string `json:"command"`
+			Enabled bool     `json:"enabled"`
 		}
 		if err := json.Unmarshal(mcpSection["atlassian"], &atlEntry); err != nil {
 			t.Fatalf("atlassian entry is not valid JSON: %v", err)
@@ -82,6 +83,9 @@ func TestSave(t *testing.T) {
 		}
 		if len(atlEntry.Command) < 2 {
 			t.Errorf("command should be [exe, mcp, ...], got %v", atlEntry.Command)
+		}
+		if !atlEntry.Enabled {
+			t.Error("enabled should be true — OpenCode won't load the server otherwise")
 		}
 	})
 

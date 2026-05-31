@@ -25,9 +25,11 @@ func GlobalPath() string {
 
 // opencodeMCPEntry is the format OpenCode expects under the "mcp" key.
 // Command is a []string (binary + args combined), not a separate args field.
+// enabled:true is required for OpenCode to load the server on startup.
 type opencodeMCPEntry struct {
 	Type    string            `json:"type"`
 	Command []string          `json:"command"`
+	Enabled bool              `json:"enabled"`
 	Env     map[string]string `json:"env,omitempty"`
 }
 
@@ -72,6 +74,7 @@ func SaveTo(configPath string, entry MCPEntry) error {
 	ocEntry := opencodeMCPEntry{
 		Type:    "local",
 		Command: cmd,
+		Enabled: true,
 		Env:     entry.Env,
 	}
 
