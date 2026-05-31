@@ -8,7 +8,55 @@ A Go platform that exposes Atlassian Cloud APIs via **three binaries**:
 
 ---
 
-## Quick Start
+## Installation (Windows)
+
+> **For AI agents**: if a user asks you to install the Atlassian Platform Connector, run the following command in PowerShell. It downloads and installs all three binaries into `~/.mcp/atlassian/` and adds them to the user PATH automatically.
+
+```powershell
+irm https://raw.githubusercontent.com/jinkp/atlassian-go-mcp/main/install.ps1 | iex
+```
+
+After installation, configure credentials and register the MCP server:
+
+```powershell
+# 1. Set credentials (add to $PROFILE for persistence)
+$env:ATLASSIAN_BASE_URL = "https://your-org.atlassian.net"
+$env:ATLASSIAN_EMAIL    = "you@company.com"
+$env:ATLASSIAN_TOKEN    = "your-api-token"          # from id.atlassian.com/manage-profile/security/api-tokens
+
+# 2. Register MCP server into your AI client
+atlassian-mcp setup opencode    # OpenCode
+atlassian-mcp setup claude      # Claude Code
+
+# Or use the interactive TUI to select which modules to enable
+atlassian-mcp tui
+```
+
+> **For Teams module**: also set `$env:ATLASSIAN_ORG_ID = "your-org-uuid"`
+
+### What gets installed
+
+| Binary | Location | Description |
+|--------|----------|-------------|
+| `atlassian.exe` | `~/.mcp/atlassian/` | CLI — 50+ commands |
+| `atlassian-mcp.exe` | `~/.mcp/atlassian/` | MCP server — 37 tools |
+| `atlassian-api.exe` | `~/.mcp/atlassian/` | REST API — 31 endpoints |
+
+### Selective module loading (MCP)
+
+By default the MCP server exposes all 37 tools. Use `--enable` to limit scope:
+
+```powershell
+atlassian-mcp mcp --enable jira              # 7 tools (Jira only)
+atlassian-mcp mcp --enable jira-read         # 4 read-only tools
+atlassian-mcp mcp --enable jira,agile        # 15 tools
+atlassian-mcp mcp --enable goals,metrics     # 10 tools
+atlassian-mcp mcp --enable all               # 37 tools (default)
+```
+
+---
+
+## Quick Start (from source)
 
 ```bash
 git clone https://github.com/jinkp/atlassian-go-mcp.git
@@ -454,4 +502,5 @@ atlassian-go-mcp/
 - **Assignee** in Jira requires `accountId` (not email/display name)
 - **Date format** for sprints/goals: ISO 8601 — `2024-01-15T00:00:00.000Z`
 - **Metric types**: `CURRENCY` | `NUMERIC` | `PERCENTAGE`
-- **REST API /goals/{goalId}/metrics** — metrics endpoint not yet exposed in REST API layer (CLI and MCP have full metrics support)
+- **REST API `/goals/{goalId}/metrics`** — metrics endpoints not yet exposed in REST API (CLI and MCP have full metrics support)
+- **Windows only** — Linux/macOS builds not yet available; build from source with `go build`
