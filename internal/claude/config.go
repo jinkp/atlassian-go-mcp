@@ -82,3 +82,13 @@ func SaveTo(configPath string, entry MCPEntry) error {
 
 	return nil
 }
+
+// SaveWithArgs writes the MCP entry with custom args (e.g. ["mcp", "--enable", "jira"]).
+// It resolves the current binary path automatically.
+func SaveWithArgs(args []string) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolving binary path: %w", err)
+	}
+	return Save(MCPEntry{Command: exe, Args: args})
+}

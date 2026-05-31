@@ -10,6 +10,7 @@ import (
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/agile"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/goals"
 	mcpserver "github.com/jinkp/atlassian-go-mcp/internal/mcp"
+	"github.com/jinkp/atlassian-go-mcp/internal/mcp/features"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/projects"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/releases"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/teams"
@@ -288,11 +289,46 @@ func TestNewAtlassianServer_HasTools(t *testing.T) {
 	releasesSvc := &mockServerReleasesService{}
 	projectsSvc := &mockServerProjectsService{}
 	teamsSvc := &mockServerTeamsService{}
-	s := mcpserver.NewAtlassianServer(svc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, audit.NewNoopLogger())
+	// nil FeatureSet → all 37 tools registered (backward-compat default)
+	s := mcpserver.NewAtlassianServer(svc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, audit.NewNoopLogger(), nil)
 	if s == nil {
 		t.Fatal("NewAtlassianServer returned nil")
 	}
 	// The server should have been constructed without panic.
 	// Tool registration is verified via the server not being nil
 	// and the package compiling — actual tool listing requires the server to run.
+}
+
+// TestNewAtlassianServer_FeatureGating verifies the server constructs without panic
+// for various FeatureSet configurations.
+func TestNewAtlassianServer_FeatureGating(t *testing.T) {
+	svc := &mockJiraService{}
+	agileSvc := &mockServerAgileService{}
+	goalsSvc := &mockServerGoalsService{}
+	releasesSvc := &mockServerReleasesService{}
+	projectsSvc := &mockServerProjectsService{}
+	teamsSvc := &mockServerTeamsService{}
+	log := audit.NewNoopLogger()
+
+	tests := []struct {
+		name    string
+		fs      *features.FeatureSet
+		wantNil bool
+	}{
+		{"nil fs → all tools", nil, false},
+		{"jira only", features.Parse("jira"), false},
+		{"jira-read only", features.Parse("jira-read"), false},
+		{"unknown module → 0 tools", features.Parse("unknown"), false},
+		{"all", features.Parse("all"), false},
+		{"goals,metrics", features.Parse("goals,metrics"), false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := mcpserver.NewAtlassianServer(svc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, log, tc.fs)
+			if (s == nil) != tc.wantNil {
+				t.Errorf("NewAtlassianServer nil=%v, want nil=%v", s == nil, tc.wantNil)
+			}
+		})
+	}
 }

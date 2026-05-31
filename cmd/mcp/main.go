@@ -25,6 +25,7 @@ import (
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/teams"
 	"github.com/jinkp/atlassian-go-mcp/internal/claude"
 	mcpserver "github.com/jinkp/atlassian-go-mcp/internal/mcp"
+	"github.com/jinkp/atlassian-go-mcp/internal/mcp/features"
 	"github.com/jinkp/atlassian-go-mcp/internal/opencode"
 )
 
@@ -42,6 +43,7 @@ func main() {
 
 	root.AddCommand(newMCPCommand())
 	root.AddCommand(newSetupCommand())
+	root.AddCommand(NewTUICmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -51,7 +53,8 @@ func main() {
 
 // newMCPCommand returns the `mcp` subcommand that starts the stdio MCP server.
 func newMCPCommand() *cobra.Command {
-	return &cobra.Command{
+	var enableFlag string
+	cmd := &cobra.Command{
 		Use:           "mcp",
 		Short:         "Start the Atlassian MCP stdio server",
 		SilenceUsage:  true,
@@ -77,9 +80,15 @@ func newMCPCommand() *cobra.Command {
 			orgID := os.Getenv("ATLASSIAN_ORG_ID")
 			teamsSvc := teams.NewService(httpClient, orgID)
 			auditLog := audit.NewJSONLogger(os.Stderr)
-			return mcpserver.StartServer(svc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, auditLog)
+			fs := features.Parse(enableFlag)
+			return mcpserver.StartServer(svc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, auditLog, fs)
 		},
 	}
+	cmd.Flags().StringVar(&enableFlag, "enable", "all",
+		"Comma-separated modules to enable: jira,agile,goals,metrics,releases,projects,teams\n"+
+			"Suffix -read or -write for access control (e.g. jira-read,agile).\n"+
+			"Default 'all' enables every tool.")
+	return cmd
 }
 
 // newSetupCommand returns the `setup` parent command with opencode/claude subcommands.
