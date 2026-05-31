@@ -62,9 +62,10 @@ var defaultModules = []ModuleConfig{
 
 var defaultRegOpts = []string{
 	"OpenCode",
-	"Claude Code",
+	"Claude Code (CLI)",
+	"Claude Desktop",
 	"Cursor",
-	"All (OpenCode + Claude + Cursor)",
+	"All (OpenCode + Claude Desktop + Cursor)",
 	"Skip (show command)",
 }
 

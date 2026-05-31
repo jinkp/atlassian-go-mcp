@@ -26,6 +26,7 @@ import (
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/releases"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/teams"
 	"github.com/jinkp/atlassian-go-mcp/internal/claude"
+	"github.com/jinkp/atlassian-go-mcp/internal/claudedesktop"
 	"github.com/jinkp/atlassian-go-mcp/internal/cursor"
 	mcpserver "github.com/jinkp/atlassian-go-mcp/internal/mcp"
 	"github.com/jinkp/atlassian-go-mcp/internal/mcp/features"
@@ -102,6 +103,7 @@ func newSetupCommand() *cobra.Command {
 	}
 	setup.AddCommand(newSetupOpenCodeCommand())
 	setup.AddCommand(newSetupClaudeCommand())
+	setup.AddCommand(newSetupClaudeDesktopCommand())
 	setup.AddCommand(newSetupCursorCommand())
 	return setup
 }
@@ -146,6 +148,28 @@ func newSetupClaudeCommand() *cobra.Command {
 				return fmt.Errorf("saving Claude config: %w", err)
 			}
 			fmt.Fprintf(os.Stdout, "Registered atlassian-mcp in %s\n", claude.GlobalPath())
+			return nil
+		},
+	}
+}
+
+func newSetupClaudeDesktopCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "claude-desktop",
+		Short: "Register into Claude Desktop (%APPDATA%\\Claude\\claude_desktop_config.json)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			binPath, err := resolvedBinaryPath()
+			if err != nil {
+				return err
+			}
+			entry := claudedesktop.MCPEntry{
+				Command: binPath,
+				Args:    []string{"mcp"},
+			}
+			if err := claudedesktop.Save(entry); err != nil {
+				return fmt.Errorf("saving Claude Desktop config: %w", err)
+			}
+			fmt.Fprintf(os.Stdout, "Registered atlassian-mcp in %s\n", claudedesktop.GlobalPath())
 			return nil
 		},
 	}

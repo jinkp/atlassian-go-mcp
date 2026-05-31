@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/jinkp/atlassian-go-mcp/internal/claude"
+	"github.com/jinkp/atlassian-go-mcp/internal/claudedesktop"
 	"github.com/jinkp/atlassian-go-mcp/internal/cursor"
 	"github.com/jinkp/atlassian-go-mcp/internal/opencode"
 )
@@ -153,20 +154,24 @@ func (m Model) executeRegistration() Model {
 		if err := opencode.SaveWithArgs(args); err != nil {
 			addErr(fmt.Sprintf("OpenCode: %v", err))
 		}
-	case "Claude Code":
+	case "Claude Code (CLI)":
 		if err := claude.SaveWithArgs(args); err != nil {
-			addErr(fmt.Sprintf("Claude: %v", err))
+			addErr(fmt.Sprintf("Claude Code: %v", err))
+		}
+	case "Claude Desktop":
+		if err := claudedesktop.SaveWithArgs(args); err != nil {
+			addErr(fmt.Sprintf("Claude Desktop: %v", err))
 		}
 	case "Cursor":
 		if err := cursor.SaveWithArgs(args); err != nil {
 			addErr(fmt.Sprintf("Cursor: %v", err))
 		}
-	case "All (OpenCode + Claude + Cursor)":
+	case "All (OpenCode + Claude Desktop + Cursor)":
 		if err := opencode.SaveWithArgs(args); err != nil {
 			addErr(fmt.Sprintf("OpenCode: %v", err))
 		}
-		if err := claude.SaveWithArgs(args); err != nil {
-			addErr(fmt.Sprintf("Claude: %v", err))
+		if err := claudedesktop.SaveWithArgs(args); err != nil {
+			addErr(fmt.Sprintf("Claude Desktop: %v", err))
 		}
 		if err := cursor.SaveWithArgs(args); err != nil {
 			addErr(fmt.Sprintf("Cursor: %v", err))
