@@ -1,9 +1,10 @@
 # Atlassian Platform Connector
 
-A Go platform that exposes Atlassian Cloud APIs (Jira, Agile, Goals) via two binaries:
+A Go platform that exposes Atlassian Cloud APIs via **three binaries**:
 
-- **`atlassian`** — CLI for humans
-- **`atlassian-mcp`** — MCP server for AI agents (Claude Code, OpenCode, Cursor, etc.)
+- **`atlassian`** — CLI for humans (50+ commands)
+- **`atlassian-mcp`** — MCP server for AI agents (37 tools — Claude Code, OpenCode, Cursor, etc.)
+- **`atlassian-api`** — REST API server for dashboards and integrations (31 endpoints)
 
 ---
 
@@ -17,18 +18,22 @@ export ATLASSIAN_BASE_URL=https://your-org.atlassian.net
 export ATLASSIAN_EMAIL=you@company.com
 export ATLASSIAN_TOKEN=your-api-token
 
-# CLI
+# Run CLI directly
 go run ./cmd/atlassian jira search --jql "project=PROJ ORDER BY updated DESC"
 
-# Build both binaries
-go build -o atlassian ./cmd/atlassian/
+# Build all three binaries
+go build -o atlassian     ./cmd/atlassian/
 go build -o atlassian-mcp ./cmd/mcp/
+go build -o atlassian-api ./cmd/api/
 
 # Register MCP into your AI client (one-time)
 ./atlassian-mcp setup opencode
 ./atlassian-mcp setup claude
 
-# Tests
+# Start REST API
+./atlassian-api --port 8080
+
+# Run tests
 go test ./...
 ```
 
@@ -41,7 +46,8 @@ go test ./...
 | `ATLASSIAN_BASE_URL` | Yes | `https://your-org.atlassian.net` |
 | `ATLASSIAN_EMAIL` | Yes | Your Atlassian account email |
 | `ATLASSIAN_TOKEN` | Yes | API token from id.atlassian.com |
-| `ENABLE_WRITE=true` | No | Enables write tools in MCP (default: disabled) |
+| `ATLASSIAN_ORG_ID` | For Teams | Organization UUID (required for `teams` commands) |
+| `ENABLE_WRITE=true` | No | Enables write tools in MCP server (default: disabled) |
 
 ---
 
@@ -50,110 +56,45 @@ go test ./...
 ```
 Atlassian Cloud
       │
-      ├── Jira REST v3        /rest/api/3/
-      ├── Agile REST v1.0     /rest/agile/1.0/
-      └── Goals GraphQL       /gateway/api/graphql
+      ├── Jira REST v3          /rest/api/3/
+      ├── Agile REST v1.0       /rest/agile/1.0/
+      ├── Goals GraphQL         /gateway/api/graphql
+      ├── Releases REST v3      /rest/api/3/version
+      ├── Projects REST v3      /rest/api/3/project
+      └── Teams Public REST     api.atlassian.com/public/teams/v1/
                 │
         internal/atlassian/
-          ├── client/     HTTP client, BasicAuth, Retry (429-only)
+          ├── client/     HTTP client, BasicAuth, Idempotency-Key, Retry (429-only)
           ├── jira/       JiraService
           ├── agile/      AgileService
-          └── goals/      GoalsService (GraphQL)
+          ├── goals/      GoalsService (GraphQL)
+          ├── releases/   ReleasesService
+          ├── projects/   ProjectsService
+          └── teams/      TeamsService
                 │
-    ┌───────────────────────┐
-    │                       │
-cmd/atlassian/          cmd/mcp/
-CLI for humans          MCP server for AI agents
+    ┌─────────────────────────────┐
+    │           │                 │
+cmd/atlassian/ cmd/mcp/       cmd/api/
+CLI for humans MCP for agents REST API
 ```
+
+### Cross-cutting features
+- **Audit log** — every write operation logged as JSON lines to stderr
+- **`--dry-run`** — all CLI write commands print intent without executing
+- **Idempotency-Key** — injected automatically on all POST requests
+- **WriteGuard** — MCP write tools blocked unless `ENABLE_WRITE=true`
 
 ---
 
 ## CLI Reference
 
-### Jira
-
+### Global flags
 ```bash
-# Read
-atlassian jira get <KEY>
-atlassian jira search --jql "project=PROJ AND status='In Progress'" [--output table|json|yaml]
-
-# Write
-atlassian jira create \
-  --project PROJ \
-  --type Bug \
-  --summary "Login fails on Safari" \
-  [--description "Steps to reproduce..."] \
-  [--assignee <accountId>] \
-  [--priority High] \
-  [--labels "bug,urgent"]
-
-atlassian jira update PROJ-123 \
-  [--summary "..."] \
-  [--description "..."] \
-  [--assignee <accountId>] \
-  [--priority Medium]
-
-atlassian jira transitions PROJ-123
-atlassian jira transition PROJ-123 --transition-id 31
+--output table|json|yaml   # output format (default: table)
+--dry-run                  # print what would happen, don't execute
 ```
-
-### Agile
-
-```bash
-# Boards & Sprints (read)
-atlassian agile boards --project PROJ
-atlassian agile sprints --board-id 10 [--state active|future|closed]
-atlassian agile sprint active --board-id 10
-atlassian agile sprint issues --sprint-id 42 [--output json]
-
-# Sprint management (write)
-atlassian agile sprint create \
-  --board-id 10 \
-  --name "Sprint 9" \
-  [--start "2024-01-15T00:00:00.000Z"] \
-  [--end "2024-01-29T00:00:00.000Z"]
-
-atlassian agile sprint update --sprint-id 42 [--name "..."] [--state closed]
-
-atlassian agile move-to-sprint --sprint-id 42 --issues "PROJ-1,PROJ-2,PROJ-3"
-atlassian agile move-to-epic --epic-key PROJ-100 --issues "PROJ-1,PROJ-2"
-```
-
-### Goals
-
-```bash
-# Requires cloud ID — get it first
-atlassian goals site-id --subdomain myorg
-
-# Read
-atlassian goals get "ari:cloud:townsquare:abc:goal/xyz"
-atlassian goals search \
-  --site-id <cloudId> \
-  [--query "status = on_track"] \
-  [--max-results 25]
-
-# Write
-atlassian goals create \
-  --site-id <cloudId> \
-  --name "Grow MRR 20% by Q4" \
-  --type-id "ari:cloud:goal:<siteId>:goal-type/..." \
-  --target-date 2026-12-31 \
-  [--confidence QUARTER] \
-  [--description "..."]
-
-atlassian goals update \
-  --goal-id "ari:cloud:townsquare:..." \
-  --status on_track \
-  [--score 75] \
-  [--summary "Q3 on track, 75% complete"]
-```
-
-### Output formats
-
-All commands support `--output table|json|yaml` (default: `table`).
 
 ### Exit codes
-
 | Code | Meaning |
 |------|---------|
 | `0` | Success |
@@ -163,92 +104,285 @@ All commands support `--output table|json|yaml` (default: `table`).
 
 ---
 
-## MCP Server — 20 Tools
+### Jira
 
-Start the MCP server for your AI client after running `setup`.
+```bash
+# Read
+atlassian jira get <KEY>
+atlassian jira search --jql "project=PROJ AND status='In Progress'"
 
-### Jira Read
+# Write
+atlassian jira create --project PROJ --type Bug --summary "..." \
+  [--description "..."] [--assignee <accountId>] [--priority High] [--labels "bug,urgent"]
+atlassian jira update <KEY> [--summary "..."] [--description "..."] [--assignee <accountId>] [--priority Medium]
+atlassian jira transitions <KEY>
+atlassian jira transition <KEY> --transition-id 31
+```
 
+### Agile
+
+```bash
+# Read
+atlassian agile boards --project PROJ
+atlassian agile sprints --board-id 10 [--state active|future|closed]
+atlassian agile sprint active --board-id 10
+atlassian agile sprint issues --sprint-id 42
+
+# Write
+atlassian agile sprint create --board-id 10 --name "Sprint 9" [--start "..."] [--end "..."]
+atlassian agile sprint update --sprint-id 42 [--name "..."] [--state closed]
+atlassian agile move-to-sprint --sprint-id 42 --issues "PROJ-1,PROJ-2"
+atlassian agile move-to-epic --epic-key PROJ-100 --issues "PROJ-1,PROJ-2"
+```
+
+### Goals
+
+```bash
+# Get site ID first (required for search/create)
+atlassian goals site-id --subdomain myorg
+
+# Read
+atlassian goals get "ari:cloud:townsquare:abc:goal/xyz"
+atlassian goals search --site-id <cloudId> [--query "status = on_track"] [--max-results 25]
+
+# Write
+atlassian goals create --site-id <cloudId> --name "Grow MRR 20%" \
+  --type-id "ari:cloud:goal:<siteId>:goal-type/..." --target-date 2026-12-31 \
+  [--confidence QUARTER] [--description "..."]
+atlassian goals update --goal-id "ari:..." --status on_track [--score 75] [--summary "..."]
+atlassian goals edit "ari:..." [--name "..."] [--target-date 2026-12-31] [--archive]
+
+# Metrics
+atlassian goals metrics "ari:..."
+atlassian goals metric-create --goal-id "ari:..." --name "MRR Growth" \
+  --type PERCENTAGE --start 0 --target 20 --initial 8
+atlassian goals metric-value --metric-id "ari:..." --value 12.5 [--time 2024-01-15T00:00:00Z]
+atlassian goals metric-target --metric-target-id "ari:..." [--current 12.5] [--target 25]
+```
+
+### Releases
+
+```bash
+atlassian releases list --project PROJ
+atlassian releases get <release-id>
+atlassian releases issues <release-id>
+atlassian releases create --project-id 10000 --name "v1.0.0" [--description "..."] [--release-date 2024-03-01]
+atlassian releases update <release-id> [--name "..."] [--released] [--archived] [--release-date 2024-03-01]
+```
+
+### Projects
+
+```bash
+atlassian projects list [--max-results 50]
+atlassian projects get <KEY>
+atlassian projects search --query "backend"
+atlassian projects update <KEY> [--name "..."] [--description "..."] [--lead <accountId>]
+```
+
+### Teams
+
+```bash
+# Requires ATLASSIAN_ORG_ID env var
+atlassian teams list [--query "engineering"] [--max-results 50]
+atlassian teams get <team-id>
+atlassian teams members <team-id> [--max-results 50]
+```
+
+---
+
+## MCP Server — 37 Tools
+
+```bash
+# Start server
+./atlassian-mcp mcp
+
+# Enable write operations
+ENABLE_WRITE=true ./atlassian-mcp mcp
+```
+
+### Jira Read (2)
 | Tool | Args | Description |
 |------|------|-------------|
 | `get_jira_issue` | `issue_key` (req) | Get issue by key |
-| `search_jira_issues` | `jql` (req), `max_results` (opt, default 50) | Search issues with JQL |
+| `search_jira_issues` | `jql` (req), `max_results` (opt, default 50) | Search with JQL |
 
-### Jira Write *(requires `ENABLE_WRITE=true`)*
-
+### Jira Write (4) — `ENABLE_WRITE=true`
 | Tool | Args | Description |
 |------|------|-------------|
-| `create_jira_issue` | `project_key`, `issue_type`, `summary` (req); `description`, `assignee_id`, `priority`, `labels` (opt) | Create an issue |
-| `update_jira_issue` | `issue_key` (req); `summary`, `description`, `assignee_id`, `priority` (opt) | Update issue fields |
-| `get_jira_transitions` | `issue_key` (req) | List available workflow transitions |
-| `transition_jira_issue` | `issue_key`, `transition_id` (req) | Apply a workflow transition |
+| `create_jira_issue` | `project_key`, `issue_type`, `summary` (req); `description`, `assignee_id`, `priority`, `labels` (opt) | Create issue |
+| `update_jira_issue` | `issue_key` (req); `summary`, `description`, `assignee_id`, `priority` (opt) | Update fields |
+| `get_jira_transitions` | `issue_key` (req) | List workflow transitions |
+| `transition_jira_issue` | `issue_key`, `transition_id` (req) | Apply transition |
 
-### Agile Read
-
+### Agile Read (5)
 | Tool | Args | Description |
 |------|------|-------------|
-| `get_jira_boards` | `project_key` (req), `max_results` (opt) | List boards for a project |
-| `get_jira_sprints` | `board_id` (req), `state` (opt), `max_results` (opt) | List sprints for a board |
-| `get_active_sprint` | `board_id` (req) | Get the active sprint |
-| `get_sprint_issues` | `sprint_id` (req), `max_results` (opt) | Issues in a sprint |
-| `get_jira_epics` | `project_key` (req) | List epics for a project |
+| `get_jira_boards` | `project_key` (req), `max_results` (opt) | List boards |
+| `get_jira_sprints` | `board_id` (req), `state` (opt), `max_results` (opt) | List sprints |
+| `get_active_sprint` | `board_id` (req) | Get active sprint |
+| `get_sprint_issues` | `sprint_id` (req), `max_results` (opt) | Issues in sprint |
+| `get_jira_epics` | `project_key` (req) | List epics |
 
-### Agile Write *(requires `ENABLE_WRITE=true`)*
-
+### Agile Write (4) — `ENABLE_WRITE=true`
 | Tool | Args | Description |
 |------|------|-------------|
-| `create_sprint` | `name`, `board_id` (req); `start_date`, `end_date` (opt, ISO 8601) | Create a new sprint |
-| `update_sprint` | `sprint_id` (req); `state`, `name`, `start_date`, `end_date` (opt) | Update or close a sprint |
-| `move_issues_to_sprint` | `sprint_id` (req), `issue_keys` (req, comma-sep, max 50) | Move issues into a sprint |
-| `move_issues_to_epic` | `epic_key` (req), `issue_keys` (req, comma-sep) | Link issues to an epic |
+| `create_sprint` | `name`, `board_id` (req); `start_date`, `end_date` (opt) | Create sprint |
+| `update_sprint` | `sprint_id` (req); `state`, `name`, `start_date`, `end_date` (opt) | Update/close sprint |
+| `move_issues_to_sprint` | `sprint_id` (req), `issue_keys` (req, comma-sep, max 50) | Move issues to sprint |
+| `move_issues_to_epic` | `epic_key` (req), `issue_keys` (req, comma-sep) | Link issues to epic |
 
-### Goals Read
-
+### Goals Read (3)
 | Tool | Args | Description |
 |------|------|-------------|
 | `get_site_id` | `subdomain` (req, e.g. `myorg`) | Get Atlassian cloud ID |
-| `get_goal` | `goal_id` (req, ARI format) | Get goal by ID |
-| `search_goals` | `site_id` (req), `search_string` (opt), `max_results` (opt, default 25), `cursor` (opt) | Search goals |
+| `get_goal` | `goal_id` (req, ARI) | Get goal by ID |
+| `search_goals` | `site_id` (req), `search_string` (opt), `max_results` (opt), `cursor` (opt) | Search goals |
+| `get_goal_metrics` | `goal_id` (req) | List metric targets for a goal |
 
-### Goals Write *(requires `ENABLE_WRITE=true`)*
-
+### Goals Write (5) — `ENABLE_WRITE=true`
 | Tool | Args | Description |
 |------|------|-------------|
-| `update_goal_status` | `goal_id`, `status` (req: `on_track`/`off_track`/`at_risk`); `score` (opt, 0-100), `summary` (opt) | Post a check-in |
-| `create_goal` | `site_id`, `name`, `goal_type_id`, `target_date` (req); `confidence` (opt, default `QUARTER`), `description` (opt) | Create a goal |
+| `update_goal_status` | `goal_id`, `status` (req: `on_track`/`off_track`/`at_risk`); `score` (opt), `summary` (opt) | Post check-in |
+| `create_goal` | `site_id`, `name`, `goal_type_id`, `target_date` (req); `confidence` (opt), `description` (opt) | Create goal |
+| `edit_goal` | `goal_id` (req); `name`, `target_date`, `confidence`, `archive` (opt) | Edit goal fields |
+| `create_metric` | `goal_id`, `name`, `metric_type`, `start_value`, `target_value`, `initial_value` (req) | Create metric |
+| `update_metric_value` | `metric_id` (req), `value` (req); `time` (opt) | Record metric value |
+| `update_metric_target` | `metric_target_id` (req); `current_value`, `start_value`, `target_value` (opt) | Update targets |
+
+### Releases Read (3)
+| Tool | Args | Description |
+|------|------|-------------|
+| `search_releases` | `project_key` (req) | List releases for project |
+| `get_release` | `release_id` (req) | Get release by ID |
+| `get_release_issues` | `release_id` (req) | Issue counts for release |
+
+### Releases Write (2) — `ENABLE_WRITE=true`
+| Tool | Args | Description |
+|------|------|-------------|
+| `create_release` | `project_id`, `name` (req); `description`, `start_date`, `release_date` (opt) | Create release |
+| `update_release` | `release_id` (req); `name`, `description`, `release_date`, `released`, `archived` (opt) | Update release |
+
+### Projects Read (3)
+| Tool | Args | Description |
+|------|------|-------------|
+| `list_projects` | `max_results` (opt, default 50) | List all projects |
+| `get_project` | `project_key` (req) | Get project by key |
+| `search_projects` | `query` (opt), `max_results` (opt) | Search projects |
+
+### Projects Write (1) — `ENABLE_WRITE=true`
+| Tool | Args | Description |
+|------|------|-------------|
+| `update_project` | `project_key` (req); `name`, `description`, `lead` (opt) | Update project |
+
+### Teams Read (3)
+| Tool | Args | Description |
+|------|------|-------------|
+| `search_teams` | `query` (opt), `max_results` (opt, default 50) | Search teams |
+| `get_team` | `team_id` (req) | Get team by ID |
+| `get_team_members` | `team_id` (req), `max_results` (opt, default 50) | List team members |
+
+---
+
+## REST API — 31 Endpoints
+
+```bash
+./atlassian-api --port 8080 [--read-only]
+
+# Write operations require header:
+# X-Enable-Write: true
+```
+
+### Routes
+
+```
+GET  /health
+
+# Jira
+GET  /jira/issues/{key}
+GET  /jira/issues?jql=...&maxResults=50
+POST /jira/issues                          (X-Enable-Write: true)
+PUT  /jira/issues/{key}                    (X-Enable-Write: true)
+GET  /jira/issues/{key}/transitions
+POST /jira/issues/{key}/transitions        (X-Enable-Write: true)
+
+# Agile
+GET  /agile/boards?project=...
+GET  /agile/boards/{boardId}/sprints?state=...
+GET  /agile/boards/{boardId}/sprints/active
+GET  /agile/sprints/{sprintId}/issues
+POST /agile/sprints                        (X-Enable-Write: true)
+PUT  /agile/sprints/{sprintId}             (X-Enable-Write: true)
+POST /agile/sprints/{sprintId}/issues      (X-Enable-Write: true)
+
+# Goals
+GET  /goals/site-id?subdomain=...
+GET  /goals?siteId=...&query=...
+GET  /goals/{goalId}
+POST /goals                                (X-Enable-Write: true)
+PUT  /goals/{goalId}/status               (X-Enable-Write: true)
+PUT  /goals/{goalId}                      (X-Enable-Write: true)
+
+# Releases
+GET  /releases?project=...
+GET  /releases/{releaseId}
+GET  /releases/{releaseId}/issues
+POST /releases                             (X-Enable-Write: true)
+PUT  /releases/{releaseId}                 (X-Enable-Write: true)
+
+# Projects
+GET  /projects?query=...
+GET  /projects/{key}
+PUT  /projects/{key}                       (X-Enable-Write: true)
+
+# Teams
+GET  /teams?query=...
+GET  /teams/{teamId}
+GET  /teams/{teamId}/members
+```
+
+### Error format
+```json
+{"error": "resource not found", "code": "NOT_FOUND"}
+```
 
 ---
 
 ## Typical Agent Workflows
 
 ### Full sprint cycle
-
 ```
-1. get_jira_boards      → find board_id for project
-2. get_active_sprint    → get current sprint_id
-3. get_sprint_issues    → see what's in the sprint
-4. search_jira_issues   → find backlog candidates
-5. move_issues_to_sprint → load sprint with issues
-6. update_sprint        → close sprint (state=closed)
-7. create_sprint        → open next sprint
+1. get_jira_boards        → find board_id for project
+2. get_active_sprint      → get current sprint_id
+3. get_sprint_issues      → see what's in the sprint
+4. search_jira_issues     → find backlog candidates
+5. move_issues_to_sprint  → load sprint with issues
+6. update_sprint          → close sprint (state=closed)
+7. create_sprint          → open next sprint
 ```
 
-### Goal health check & update
-
+### Goal + metrics workflow
 ```
-1. get_site_id          → get cloudId for your org
-2. search_goals         → find goals by status/owner
-3. get_goal             → inspect a specific goal
-4. update_goal_status   → post check-in with score
+1. get_site_id            → get cloudId for your org
+2. search_goals           → find goals by status/owner
+3. get_goal_metrics       → see current metric values
+4. update_metric_value    → record new actual value
+5. update_goal_status     → post check-in (score + summary)
+```
+
+### Release management
+```
+1. search_releases        → list open releases
+2. get_release_issues     → see issue counts by status
+3. update_release         → mark as released (released=true)
+4. create_release         → open next version
 ```
 
 ### Bug triage
-
 ```
-1. search_jira_issues   → find High priority open bugs
-2. create_jira_issue    → create new bug if missing
-3. get_jira_transitions → discover transition IDs
-4. transition_jira_issue → move to In Progress
+1. search_jira_issues     → find High priority open bugs
+2. create_jira_issue      → create new bug
+3. get_jira_transitions   → discover transition IDs
+4. transition_jira_issue  → move to In Progress
 ```
 
 ---
@@ -257,11 +391,14 @@ Start the MCP server for your AI client after running `setup`.
 
 | Feature | Behavior |
 |---------|----------|
-| Write protection | All MCP write tools require `ENABLE_WRITE=true` — safe by default for AI agents |
-| Rate limiting | Retry on HTTP 429 only — with exponential backoff and `Retry-After` header support |
-| Token safety | API tokens are never logged or printed to stdout |
-| ADF handling | Plain-text descriptions are automatically wrapped to Atlassian Document Format |
-| Idempotency | Move operations are idempotent — duplicate issue keys are silently ignored by Jira |
+| Write protection (MCP) | All write tools require `ENABLE_WRITE=true` — safe by default for AI agents |
+| Write protection (API) | POST/PUT blocked unless `X-Enable-Write: true` header — or `--read-only` flag |
+| `--dry-run` (CLI) | All write commands print intent without executing — exit 0 |
+| Idempotency-Key | Injected automatically on every POST request |
+| Rate limiting | Retry on HTTP 429 only — exponential backoff + `Retry-After` header |
+| Audit log | Every write operation logged as JSON line to stderr |
+| Token safety | API tokens never logged or printed to stdout |
+| ADF handling | Plain-text descriptions auto-wrapped to Atlassian Document Format |
 
 ---
 
@@ -271,33 +408,50 @@ Start the MCP server for your AI client after running `setup`.
 atlassian-go-mcp/
 ├── cmd/
 │   ├── atlassian/               # CLI binary
-│   │   ├── main.go              # Root command, env validation, service wiring
+│   │   ├── main.go
 │   │   ├── jira/                # get, search, create, update, transitions, transition
 │   │   ├── agile/               # boards, sprints, sprint-*, move-to-*
-│   │   └── goals/               # site-id, get, search, create, update
-│   └── mcp/
-│       └── main.go              # MCP stdio server (20 tools)
+│   │   ├── goals/               # site-id, get, search, create, update, edit, metrics
+│   │   ├── releases/            # list, get, issues, create, update
+│   │   ├── projects/            # list, get, search, update
+│   │   └── teams/               # list, get, members
+│   ├── mcp/
+│   │   └── main.go              # MCP stdio server (37 tools)
+│   └── api/
+│       └── main.go              # REST API server (31 endpoints)
 ├── internal/
 │   ├── atlassian/
-│   │   ├── client/              # HTTP client, BasicAuthTransport, RetryTransport
+│   │   ├── client/              # HTTP, BasicAuth, IdempotencyTransport, RetryTransport
 │   │   ├── jira/                # Jira REST v3 — full CRUD + transitions
 │   │   ├── agile/               # Jira Agile REST v1.0 — boards, sprints, moves
-│   │   └── goals/               # Atlassian Goals GraphQL — list, get, create, update
-│   ├── mcp/                     # Tool handlers, WriteGuardCheck, server registration
+│   │   ├── goals/               # Goals GraphQL — 10 methods incl. metrics
+│   │   ├── releases/            # Jira Versions REST v3
+│   │   ├── projects/            # Jira Projects REST v3
+│   │   └── teams/               # Atlassian Teams Public REST API
+│   ├── api/
+│   │   ├── server.go            # Server struct, Start()
+│   │   ├── router.go            # Route registration
+│   │   ├── middleware.go        # Recover, Logging, WriteGuard
+│   │   ├── respond.go           # JSON helpers, error codes
+│   │   └── handlers/            # Domain handlers (jira, agile, goals, etc.)
+│   ├── mcp/                     # Tool handlers, WriteGuardCheck, server
+│   ├── audit/                   # JSONLogger — writes to stderr
 │   ├── opencode/                # JSON-merge config writer for opencode.json
 │   ├── claude/                  # JSON-merge config writer for .claude.json
 │   └── output/                  # Formatters: table / json / yaml
 ├── go.mod
 ├── go.sum
-└── mvp.txt                      # Original product vision
+└── mvp.txt
 ```
 
 ---
 
-## Known Limitations
+## Notes
 
-- **`atlassian agile epics`** — not yet available as a CLI command (no `GetEpics` service method; use `search_jira_issues` with JQL `issuetype=Epic` as a workaround)
-- **Goal metrics CRUD** — deferred; the Atlassian Goals metrics API has no public documentation at this time. Will be added after schema discovery via `__schema` introspection
-- **`goal_type_id`** for `create_goal` — this is a per-tenant ARI. Obtain it from your Atlassian admin or the Goals UI. Format: `ari:cloud:goal:<siteId>:goal-type/<activationId>/<goalTypeId>`
-- **Date format** for sprints and goals: ISO 8601 — `2024-01-15T00:00:00.000Z`
-- **Assignee** for Jira requires `accountId` (not display name or email). Use the Jira user search API or find it in profile URLs
+- **`atlassian agile epics` CLI** — not yet implemented (use `search_jira_issues --jql "issuetype=Epic"`)
+- **Teams** requires `ATLASSIAN_ORG_ID` env var (org UUID from your Atlassian admin)
+- **`goal_type_id`** is per-tenant ARI — obtain from Goals UI or Atlassian admin
+- **Assignee** in Jira requires `accountId` (not email/display name)
+- **Date format** for sprints/goals: ISO 8601 — `2024-01-15T00:00:00.000Z`
+- **Metric types**: `CURRENCY` | `NUMERIC` | `PERCENTAGE`
+- **REST API /goals/{goalId}/metrics** — metrics endpoint not yet exposed in REST API layer (CLI and MCP have full metrics support)
