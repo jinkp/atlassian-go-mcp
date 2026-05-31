@@ -3,8 +3,12 @@
 /atlassian.exe
 /atlassian-mcp
 /atlassian-mcp.exe
+/atlassian-api
+/atlassian-api.exe
 /mcp
 /mcp.exe
+/api
+/api.exe
 
 # Build output
 *.out
