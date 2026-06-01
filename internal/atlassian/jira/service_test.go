@@ -135,7 +135,7 @@ func TestJiraService_GetIssue_Forbidden(t *testing.T) {
 
 func TestJiraService_SearchIssues_Success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/rest/api/3/search" {
+		if r.URL.Path != "/rest/api/3/search/jql" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 		q := r.URL.Query()
@@ -204,9 +204,8 @@ func TestJiraService_SearchIssues_DefaultMaxResults(t *testing.T) {
 }
 
 func TestJiraService_SearchIssues_PaginationParams(t *testing.T) {
-	var gotStartAt, gotMaxResults string
+	var gotMaxResults string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotStartAt = r.URL.Query().Get("startAt")
 		gotMaxResults = r.URL.Query().Get("maxResults")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -222,9 +221,7 @@ func TestJiraService_SearchIssues_PaginationParams(t *testing.T) {
 	if gotMaxResults != "50" {
 		t.Errorf("maxResults: expected 50, got %q", gotMaxResults)
 	}
-	if gotStartAt != "0" {
-		t.Errorf("startAt: expected 0, got %q", gotStartAt)
-	}
+	// Note: startAt is no longer sent — the new /search/jql endpoint uses nextPageToken
 	if result.Total != 120 {
 		t.Errorf("Total: expected 120, got %d", result.Total)
 	}

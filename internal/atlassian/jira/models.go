@@ -110,12 +110,14 @@ func (r IssueAPIResponse) ToIssue() Issue {
 	return issue
 }
 
-// SearchAPIResponse maps the raw JSON from GET /rest/api/3/search.
+// SearchAPIResponse maps the raw JSON from GET /rest/api/3/search/jql.
+// Supports both legacy (total/startAt/maxResults) and enhanced (isLast/nextPageToken) fields.
 type SearchAPIResponse struct {
 	Total      int                `json:"total"`
 	StartAt    int                `json:"startAt"`
 	MaxResults int                `json:"maxResults"`
 	Issues     []IssueAPIResponse `json:"issues"`
+	IsLast     *bool              `json:"isLast,omitempty"`
 }
 
 // ToSearchResult converts the raw search response to the domain SearchResult.
@@ -124,9 +126,13 @@ func (r SearchAPIResponse) ToSearchResult() SearchResult {
 	for i, raw := range r.Issues {
 		issues[i] = raw.ToIssue()
 	}
+	total := r.Total
+	if total == 0 {
+		total = len(issues)
+	}
 	return SearchResult{
 		Issues:     issues,
-		Total:      r.Total,
+		Total:      total,
 		StartAt:    r.StartAt,
 		MaxResults: r.MaxResults,
 	}

@@ -2,7 +2,7 @@
 // It mirrors the jira package structure: interface, concrete impl, and domain models.
 package agile
 
-
+import "encoding/json"
 
 // Board is the domain model for a Jira Software board.
 type Board struct {
@@ -63,11 +63,33 @@ type boardsAPIResponse struct {
 }
 
 type boardAPIItem struct {
-	ID   int    `json:"id"`
-	Name string `json:"name"`
-	Type struct {
+	ID       int             `json:"id"`
+	Name     string          `json:"name"`
+	RawType  json.RawMessage `json:"type"`
+}
+
+// boardType extracts the board type as a string.
+// Handles both old format {"name":"scrum"} and new format "scrum".
+func (b boardAPIItem) boardType() string {
+	s := string(b.RawType)
+	if len(s) == 0 {
+		return ""
+	}
+	// New format: plain string "scrum"
+	if s[0] == '"' {
+		var v string
+		if json.Unmarshal(b.RawType, &v) == nil {
+			return v
+		}
+	}
+	// Old format: object {"name":"scrum"}
+	var obj struct {
 		Name string `json:"name"`
-	} `json:"type"`
+	}
+	if json.Unmarshal(b.RawType, &obj) == nil {
+		return obj.Name
+	}
+	return ""
 }
 
 // sprintsAPIResponse is the JSON shape from GET /rest/agile/1.0/board/{id}/sprint.

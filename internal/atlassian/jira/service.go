@@ -302,12 +302,12 @@ func (s *JiraService) SearchIssues(ctx context.Context, jql string, maxResults i
 		maxResults = defaultMaxResults
 	}
 
-	endpoint := s.baseURL + "/rest/api/3/search"
+	endpoint := s.baseURL + "/rest/api/3/search/jql"
 
 	params := url.Values{}
 	params.Set("jql", jql)
 	params.Set("maxResults", strconv.Itoa(maxResults))
-	params.Set("startAt", "0")
+	params.Set("fields", "summary,status,assignee,priority,issuetype,created,updated,description,project,labels")
 
 	fullURL := endpoint + "?" + params.Encode()
 

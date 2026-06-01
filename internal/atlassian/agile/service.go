@@ -90,7 +90,7 @@ func (s *AgileJiraService) GetBoards(ctx context.Context, projectKey string, max
 		boards[i] = Board{
 			ID:   item.ID,
 			Name: item.Name,
-			Type: item.Type.Name,
+			Type: item.boardType(),
 		}
 	}
 	return boards, nil
