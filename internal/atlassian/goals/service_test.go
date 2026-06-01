@@ -127,12 +127,10 @@ func TestGetGoal(t *testing.T) {
 			"goals_byId": {
 				"id": "ari:cloud:townsquare:abc:goal/xyz",
 				"name": "Increase Revenue",
-				"score": 75,
-				"targetDate": "2026-12-31",
+				"targetDate": {"label": "2026-12-31"},
 				"startDate": "2026-01-01",
-				"status": {"value": "on_track"},
-				"phase": {"name": "in_progress"},
-				"owner": {"name": "Alice", "aaid": "acct-001"}
+				"status": {"value": "on_track", "score": 75},
+				"owner": {"name": "Alice", "accountId": "acct-001"}
 			}
 		}
 	}`
@@ -152,7 +150,6 @@ func TestGetGoal(t *testing.T) {
 				ID:         "ari:cloud:townsquare:abc:goal/xyz",
 				Name:       "Increase Revenue",
 				Status:     "on_track",
-				Phase:      "in_progress",
 				Score:      75,
 				TargetDate: "2026-12-31",
 				StartDate:  "2026-01-01",
@@ -259,8 +256,8 @@ func TestSearchGoals(t *testing.T) {
 		"data": {
 			"goals_search": {
 				"edges": [
-					{"node": {"id":"g1","name":"Goal One","score":50,"targetDate":"","startDate":"","status":{"value":"on_track"},"phase":{"name":"in_progress"},"owner":null}},
-					{"node": {"id":"g2","name":"Goal Two","score":80,"targetDate":"","startDate":"","status":{"value":"at_risk"},"phase":{"name":"pending"},"owner":null}}
+					{"node": {"id":"g1","name":"Goal One","targetDate":null,"startDate":"","status":{"value":"on_track","score":50},"owner":null}},
+					{"node": {"id":"g2","name":"Goal Two","targetDate":null,"startDate":"","status":{"value":"at_risk","score":80},"owner":null}}
 				],
 				"pageInfo": {"hasNextPage":false,"endCursor":""}
 			}
@@ -310,7 +307,7 @@ func TestSearchGoals(t *testing.T) {
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`{"data":{"goals_search":{"edges":[{"node":{"id":"g1","name":"G","score":0,"targetDate":"","startDate":"","status":{"value":"on_track"},"phase":{"name":"in_progress"},"owner":null}}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor123"}}}}`))
+				w.Write([]byte(`{"data":{"goals_search":{"edges":[{"node":{"id":"g1","name":"G","targetDate":null,"startDate":"","status":{"value":"on_track"},"owner":null}}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor123"}}}}`))
 			},
 		},
 		{

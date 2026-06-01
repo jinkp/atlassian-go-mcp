@@ -115,10 +115,10 @@ func (s *GoalsGraphQLService) GetSiteID(ctx context.Context, subdomain string) (
 func (s *GoalsGraphQLService) GetGoal(ctx context.Context, goalID string) (*Goal, error) {
 	const query = `query GetGoal($goalId: ID!) {
   goals_byId(goalId: $goalId) {
-    id name score targetDate startDate
-    status { value }
-    phase { name }
-    owner { name aaid }
+    id name startDate
+    targetDate { label }
+    status { value score }
+    owner { ... on AtlassianAccountUser { name accountId } }
   }
 }`
 	variables := map[string]any{"goalId": goalID}
@@ -155,10 +155,10 @@ func (s *GoalsGraphQLService) SearchGoals(ctx context.Context, req SearchGoalsRe
   goals_search(containerId: $containerId, searchString: $searchString, first: $first, after: $after, sort: [NAME_ASC]) {
     edges {
       node {
-        id name score targetDate startDate
-        status { value }
-        phase { name }
-        owner { name aaid }
+        id name startDate
+        targetDate { label }
+        status { value score }
+        owner { ... on AtlassianAccountUser { name accountId } }
       }
     }
     pageInfo {

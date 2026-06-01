@@ -106,35 +106,37 @@ type goalsSearchData struct {
 type goalAPIItem struct {
 	ID         string `json:"id"`
 	Name       string `json:"name"`
-	Score      int    `json:"score"`
-	TargetDate string `json:"targetDate"`
-	StartDate  string `json:"startDate"`
-	Status     struct {
-		Value string `json:"value"`
+	TargetDate *struct {
+		Label string `json:"label"`
+	} `json:"targetDate"`
+	StartDate string `json:"startDate"`
+	Status    struct {
+		Value string   `json:"value"`
+		Score *float64 `json:"score"`
 	} `json:"status"`
-	Phase struct {
-		Name string `json:"name"`
-	} `json:"phase"`
 	Owner *struct {
-		Name string `json:"name"`
-		AAID string `json:"aaid"`
+		Name      string `json:"name"`
+		AccountID string `json:"accountId"`
 	} `json:"owner"`
 }
 
 // toGoal converts a wire goalAPIItem to the domain Goal model.
 func (item goalAPIItem) toGoal() Goal {
 	g := Goal{
-		ID:         item.ID,
-		Name:       item.Name,
-		Status:     item.Status.Value,
-		Phase:      item.Phase.Name,
-		Score:      item.Score,
-		TargetDate: item.TargetDate,
-		StartDate:  item.StartDate,
+		ID:        item.ID,
+		Name:      item.Name,
+		Status:    item.Status.Value,
+		StartDate: item.StartDate,
+	}
+	if item.Status.Score != nil {
+		g.Score = int(*item.Status.Score)
+	}
+	if item.TargetDate != nil {
+		g.TargetDate = item.TargetDate.Label
 	}
 	if item.Owner != nil {
 		g.OwnerName = item.Owner.Name
-		g.OwnerID = item.Owner.AAID
+		g.OwnerID = item.Owner.AccountID
 	}
 	return g
 }
