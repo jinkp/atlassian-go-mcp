@@ -445,22 +445,21 @@ Pass --remove to unregister instead.`,
 
 // newUninstallCommand returns the `uninstall` command that unregisters the
 // connector from every AI client recorded in setup-history.json. It is the
-// symmetric counterpart of `setup`. It never deletes the shared credentials file
-// unless --purge-credentials is passed, and it does not remove the binaries or
-// PATH entry (that belongs to the installer script; a running executable cannot
-// delete itself on Windows).
+// symmetric counterpart of `setup`. It NEVER touches the shared credentials file
+// (~/.atlassian/credentials.env) because it is shared with other Atlassian
+// tooling, and it does not remove the binaries or PATH entry (that belongs to the
+// installer script; a running executable cannot delete itself on Windows).
 func newUninstallCommand() *cobra.Command {
 	var dryRun bool
-	var purgeCreds bool
 	cmd := &cobra.Command{
 		Use:   "uninstall",
 		Short: "Unregister the connector from all configured AI clients",
 		Long: `Unregister atlassian-platform-connector from every AI client recorded in
 ~/.mcp/atlassian/setup-history.json (OpenCode, Claude Code, Claude Desktop, Cursor).
 
-Credentials in ~/.atlassian/credentials.env are KEPT by default because they are
-shared with other Atlassian tooling (e.g. bbk). Pass --purge-credentials to delete
-them. Binaries and the PATH entry are not touched here — see the printed hint.`,
+The shared credentials file (~/.atlassian/credentials.env) is NEVER deleted — it is
+shared with other Atlassian tooling (e.g. bbk). Binaries and the PATH entry are not
+touched here — see the printed hint.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -495,27 +494,15 @@ them. Binaries and the PATH entry are not touched here — see the printed hint.
 				saveSetupHistory(remaining)
 			}
 
-			// Credentials — shared store, kept unless explicitly purged.
-			credPath := envstore.Path()
-			if purgeCreds {
-				if dryRun {
-					fmt.Fprintf(os.Stdout, "\n[dry-run] would delete credentials %s\n", credPath)
-				} else if err := os.Remove(credPath); err == nil {
-					fmt.Fprintf(os.Stdout, "\nDeleted credentials %s\n", credPath)
-				} else if !os.IsNotExist(err) {
-					fmt.Fprintf(os.Stderr, "\n! could not delete %s: %v\n", credPath, err)
-				}
-			} else {
-				fmt.Fprintf(os.Stdout, "\nCredentials kept at %s\n", credPath)
-				fmt.Fprintln(os.Stdout, "  (shared with other Atlassian tools; use --purge-credentials to delete)")
-			}
+			// Credentials are ALWAYS kept — the file is a shared store and this
+			// command must never risk deconfiguring other Atlassian tools.
+			fmt.Fprintf(os.Stdout, "\nCredentials kept at %s (shared store — never deleted)\n", envstore.Path())
 
 			printBinaryCleanupHint()
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would be removed without changing anything")
-	cmd.Flags().BoolVar(&purgeCreds, "purge-credentials", false, "Also delete the shared credentials file (~/.atlassian/credentials.env)")
 	return cmd
 }
 
