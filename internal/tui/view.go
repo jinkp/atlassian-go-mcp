@@ -26,7 +26,23 @@ var (
 	styleMask        = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	styleStep        = lipgloss.NewStyle().Faint(true)
 	styleSpinner     = lipgloss.NewStyle().Foreground(lipgloss.Color("14"))
+	styleLogo        = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
+	styleLogoSub     = lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Faint(true)
 )
+
+// logoArt is the compact ASCII wordmark shown at the top of the first screen.
+const logoArt = ` █████╗ ████████╗██╗
+██╔══██╗╚══██╔══╝██║
+███████║   ██║   ██║
+██╔══██║   ██║   ██║
+██║  ██║   ██║   ███████╗
+╚═╝  ╚═╝   ╚═╝   ╚══════╝`
+
+// renderLogo returns the styled logo block plus the product tagline.
+func renderLogo() string {
+	return styleLogo.Render(logoArt) + "\n" +
+		styleLogoSub.Render("Atlassian Platform Connector  ·  MCP · CLI · REST") + "\n\n"
+}
 
 // View renders the current screen.
 func (m Model) View() string {
@@ -50,7 +66,8 @@ func (m Model) View() string {
 func (m Model) viewModules() string {
 	var b strings.Builder
 
-	b.WriteString(styleTitle.Render("Atlassian MCP — Configure Tools"))
+	b.WriteString(renderLogo())
+	b.WriteString(styleTitle.Render("Configure Tools"))
 	b.WriteString("  " + styleStep.Render("(1/4)"))
 	b.WriteString("\n\n")
 	b.WriteString("Select modules to enable:\n\n")

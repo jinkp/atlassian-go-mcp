@@ -60,6 +60,19 @@ func TestNewModel_InitialState(t *testing.T) {
 	}
 }
 
+// --- T1b: Logo on the modules screen ---
+
+func TestModulesViewShowsLogo(t *testing.T) {
+	m := tui.NewModel() // starts on ScreenModules
+	out := m.View()
+	if !strings.Contains(out, "█") {
+		t.Error("expected the ASCII logo block in the modules view")
+	}
+	if !strings.Contains(out, "Atlassian Platform Connector") {
+		t.Error("expected the product name tagline in the logo")
+	}
+}
+
 // --- T2: Toggle enabled (space) ---
 
 func TestToggleModule_Space(t *testing.T) {
