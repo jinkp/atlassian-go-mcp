@@ -57,7 +57,7 @@ type opencodeMCPEntry struct {
 
 // Save writes entry under mcp.atlassian in the GlobalPath() file,
 // merging with any existing content and preserving unrelated keys.
-// OpenCode format: {"mcp": {"atlassian-platform-connector": {"type":"local","command":["exe","mcp"]}}}
+// OpenCode format: {"mcp": {"atlassian-mcp": {"type":"local","command":["exe","mcp"]}}}
 func Save(entry MCPEntry) error {
 	return SaveTo(GlobalPath(), entry)
 }
@@ -104,7 +104,8 @@ func SaveTo(configPath string, entry MCPEntry) error {
 	if marshalErr != nil {
 		return fmt.Errorf("marshal MCP entry: %w", marshalErr)
 	}
-	mcpSection["atlassian-platform-connector"] = json.RawMessage(entryBytes)
+	mcpSection[serverName] = json.RawMessage(entryBytes)
+	delete(mcpSection, legacyServerName) // drop any pre-rename entry
 
 	mcpBytes, err := json.Marshal(mcpSection)
 	if err != nil {
@@ -139,18 +140,23 @@ func SaveWithArgs(args []string) error {
 }
 
 // serverName is the MCP entry key this tool registers under.
-const serverName = "atlassian-platform-connector"
+// legacyServerName is the pre-rename key, cleaned up on save/remove.
+const (
+	serverName       = "atlassian-mcp"
+	legacyServerName = "atlassian-platform-connector"
+)
 
-// Remove deletes the atlassian-platform-connector entry from GlobalPath().
+// Remove deletes the atlassian-mcp entry from GlobalPath().
 func Remove() (bool, error) { return RemoveFrom(GlobalPath()) }
 
 // RemoveLocal deletes the entry from the local project config (./opencode.json).
 func RemoveLocal() (bool, error) { return RemoveFrom(LocalPath()) }
 
-// RemoveFrom deletes the connector entry from configPath under the "mcp" key,
-// preserving all other keys and MCP servers. If the "mcp" section becomes empty
-// it is removed too. Returns (removed, error); removed is false when the file or
-// the entry does not exist.
+// RemoveFrom deletes the connector entry from configPath under the "mcp" key
+// (both the current name and the legacy pre-rename name), preserving all other
+// keys and MCP servers. If the "mcp" section becomes empty it is removed too.
+// Returns (removed, error); removed is false when the file or the entry does not
+// exist.
 func RemoveFrom(configPath string) (bool, error) {
 	data, readErr := os.ReadFile(configPath)
 	if readErr != nil {
@@ -173,10 +179,13 @@ func RemoveFrom(configPath string) (bool, error) {
 	if err := json.Unmarshal(rawMCP, &mcpSection); err != nil {
 		return false, fmt.Errorf("parse mcp section: %w", err)
 	}
-	if _, present := mcpSection[serverName]; !present {
+	_, hasCurrent := mcpSection[serverName]
+	_, hasLegacy := mcpSection[legacyServerName]
+	if !hasCurrent && !hasLegacy {
 		return false, nil
 	}
 	delete(mcpSection, serverName)
+	delete(mcpSection, legacyServerName)
 
 	if len(mcpSection) == 0 {
 		delete(root, "mcp")

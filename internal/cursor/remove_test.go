@@ -14,7 +14,7 @@ func TestRemoveFrom_PreservesOtherServers(t *testing.T) {
 	configPath := filepath.Join(dir, "mcp.json")
 	seed := `{
   "mcpServers": {
-    "atlassian-platform-connector": {"command":"exe","args":["mcp"]},
+    "atlassian-mcp": {"command":"exe","args":["mcp"]},
     "other-server": {"command":"other"}
   }
 }`
@@ -34,7 +34,7 @@ func TestRemoveFrom_PreservesOtherServers(t *testing.T) {
 	}
 	var mcp map[string]json.RawMessage
 	_ = json.Unmarshal(root["mcpServers"], &mcp)
-	if _, ok := mcp["atlassian-platform-connector"]; ok {
+	if _, ok := mcp["atlassian-mcp"]; ok {
 		t.Error("connector entry should be gone")
 	}
 	if _, ok := mcp["other-server"]; !ok {

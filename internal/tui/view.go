@@ -260,7 +260,7 @@ func (m Model) viewDone() string {
 	if m.errMsg != "" {
 		b.WriteString(styleError.Render("Warning: " + m.errMsg))
 	} else {
-		b.WriteString(styleSuccess.Render("Done! Registered atlassian-platform-connector"))
+		b.WriteString(styleSuccess.Render("Done! Registered atlassian-mcp"))
 	}
 
 	b.WriteString("\n\nCommand to run the MCP server:\n")

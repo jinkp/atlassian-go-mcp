@@ -122,11 +122,11 @@ func removeSetupFromHistory(client, scope string) {
 // updates the setup history when something was actually removed.
 func reportRemoval(client, scope, configPath string, removed bool) {
 	if removed {
-		fmt.Fprintf(os.Stdout, "Removed atlassian-platform-connector from %s\n", configPath)
+		fmt.Fprintf(os.Stdout, "Removed atlassian-mcp from %s\n", configPath)
 		removeSetupFromHistory(client, scope)
 		return
 	}
-	fmt.Fprintf(os.Stdout, "No atlassian-platform-connector entry found in %s\n", configPath)
+	fmt.Fprintf(os.Stdout, "No atlassian-mcp entry found in %s\n", configPath)
 }
 
 // removeFromClient dispatches an unregister to the correct client config package.
@@ -257,7 +257,7 @@ func newSetupOpenCodeCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "opencode",
 		Short: "Register into OpenCode config",
-		Long: `Register atlassian-platform-connector into OpenCode.
+		Long: `Register atlassian-mcp into OpenCode.
 
   Global (default): ~/.config/opencode/opencode.json
   Local:            ./opencode.json  (current project only)
@@ -294,7 +294,7 @@ Pass --remove to unregister instead.`,
 			if err != nil {
 				return fmt.Errorf("saving OpenCode config: %w", err)
 			}
-			fmt.Fprintf(os.Stdout, "Registered atlassian-platform-connector in %s\n", configPath)
+			fmt.Fprintf(os.Stdout, "Registered atlassian-mcp in %s\n", configPath)
 			saveSetupToEngram(setupRecord{Client: "opencode", Scope: scope, ConfigPath: configPath, Args: []string{"mcp"}, Timestamp: time.Now()})
 			return nil
 		},
@@ -310,7 +310,7 @@ func newSetupClaudeCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "claude",
 		Short: "Register into Claude Code config",
-		Long: `Register atlassian-platform-connector into Claude Code (CLI).
+		Long: `Register atlassian-mcp into Claude Code (CLI).
 
   Global (default): ~/.claude.json
   Local:            ./.claude/settings.json  (current project only)
@@ -347,7 +347,7 @@ Pass --remove to unregister instead.`,
 			if err != nil {
 				return fmt.Errorf("saving Claude config: %w", err)
 			}
-			fmt.Fprintf(os.Stdout, "Registered atlassian-platform-connector in %s\n", configPath)
+			fmt.Fprintf(os.Stdout, "Registered atlassian-mcp in %s\n", configPath)
 			saveSetupToEngram(setupRecord{Client: "claude", Scope: scope, ConfigPath: configPath, Args: []string{"mcp"}, Timestamp: time.Now()})
 			return nil
 		},
@@ -362,7 +362,7 @@ func newSetupClaudeDesktopCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "claude-desktop",
 		Short: "Register into Claude Desktop (global only)",
-		Long:  `Register atlassian-platform-connector into Claude Desktop. Global only: %APPDATA%\Claude\claude_desktop_config.json` + "\n\nPass --remove to unregister instead.",
+		Long:  `Register atlassian-mcp into Claude Desktop. Global only: %APPDATA%\Claude\claude_desktop_config.json` + "\n\nPass --remove to unregister instead.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			configPath := claudedesktop.GlobalPath()
 			if remove {
@@ -381,7 +381,7 @@ func newSetupClaudeDesktopCommand() *cobra.Command {
 			if err := claudedesktop.Save(entry); err != nil {
 				return fmt.Errorf("saving Claude Desktop config: %w", err)
 			}
-			fmt.Fprintf(os.Stdout, "Registered atlassian-platform-connector in %s\n", configPath)
+			fmt.Fprintf(os.Stdout, "Registered atlassian-mcp in %s\n", configPath)
 			saveSetupToEngram(setupRecord{Client: "claude-desktop", Scope: "global", ConfigPath: configPath, Args: []string{"mcp"}, Timestamp: time.Now()})
 			return nil
 		},
@@ -396,7 +396,7 @@ func newSetupCursorCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cursor",
 		Short: "Register into Cursor config",
-		Long: `Register atlassian-platform-connector into Cursor.
+		Long: `Register atlassian-mcp into Cursor.
 
   Global (default): ~/.cursor/mcp.json
   Local:            ./.cursor/mcp.json  (current project only)
@@ -433,7 +433,7 @@ Pass --remove to unregister instead.`,
 			if err != nil {
 				return fmt.Errorf("saving Cursor config: %w", err)
 			}
-			fmt.Fprintf(os.Stdout, "Registered atlassian-platform-connector in %s\n", configPath)
+			fmt.Fprintf(os.Stdout, "Registered atlassian-mcp in %s\n", configPath)
 			saveSetupToEngram(setupRecord{Client: "cursor", Scope: scope, ConfigPath: configPath, Args: []string{"mcp"}, Timestamp: time.Now()})
 			return nil
 		},
@@ -454,7 +454,7 @@ func newUninstallCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "uninstall",
 		Short: "Unregister the connector from all configured AI clients",
-		Long: `Unregister atlassian-platform-connector from every AI client recorded in
+		Long: `Unregister atlassian-mcp from every AI client recorded in
 ~/.mcp/atlassian/setup-history.json (OpenCode, Claude Code, Claude Desktop, Cursor).
 
 The shared credentials file (~/.atlassian/credentials.env) is NEVER deleted — it is

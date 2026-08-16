@@ -85,7 +85,7 @@ func LogStartupDiagnostics(w io.Writer, fs *features.FeatureSet) {
 // log receives an entry for every write operation (after WriteGuardCheck passes).
 func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc goals.GoalsService, releasesSvc releases.ReleasesService, projectsSvc projects.ProjectsService, teamsSvc teams.TeamsService, bitbucketSvc bitbucket.BitbucketService, log audit.Logger, fs *features.FeatureSet) *server.MCPServer {
 	s := server.NewMCPServer(
-		"atlassian-platform-connector",
+		"atlassian-mcp",
 		serverVersion,
 		server.WithToolCapabilities(true),
 	)

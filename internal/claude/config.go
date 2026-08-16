@@ -50,7 +50,7 @@ func Save(entry MCPEntry) error {
 }
 
 // SaveTo is the testable form of Save — uses configPath instead of GlobalPath().
-// Claude Code format: {"mcpServers": {"atlassian-platform-connector": {"command":"exe","args":["mcp"]}}}
+// Claude Code format: {"mcpServers": {"atlassian-mcp": {"command":"exe","args":["mcp"]}}}
 // The mcpServers key must be at the ROOT of .claude.json, not inside "projects".
 //
 // Note: .claude.json may contain duplicate keys (different-case paths) that cause
@@ -88,7 +88,8 @@ func SaveTo(configPath string, entry MCPEntry) error {
 	if marshalErr != nil {
 		return fmt.Errorf("marshal MCP entry: %w", marshalErr)
 	}
-	mcpServers["atlassian-platform-connector"] = json.RawMessage(entryBytes)
+	mcpServers[serverName] = json.RawMessage(entryBytes)
+	delete(mcpServers, legacyServerName) // drop any pre-rename entry
 
 	mcpBytes, err := json.Marshal(mcpServers)
 	if err != nil {
@@ -127,7 +128,7 @@ func patchMCPServers(configPath string, _ []byte, entry MCPEntry) error {
 	// and also attempt to write a clean mcpServers block.
 	mcpOnly := map[string]interface{}{
 		"mcpServers": map[string]interface{}{
-			"atlassian-platform-connector": entry,
+			serverName: entry,
 		},
 	}
 	out, err := json.MarshalIndent(mcpOnly, "", "  ")
@@ -154,19 +155,24 @@ func SaveWithArgs(args []string) error {
 }
 
 // serverName is the MCP entry key this tool registers under.
-const serverName = "atlassian-platform-connector"
+// legacyServerName is the pre-rename key, cleaned up on save/remove.
+const (
+	serverName       = "atlassian-mcp"
+	legacyServerName = "atlassian-platform-connector"
+)
 
-// Remove deletes the atlassian-platform-connector entry from GlobalPath().
+// Remove deletes the atlassian-mcp entry from GlobalPath().
 func Remove() (bool, error) { return RemoveFrom(GlobalPath()) }
 
 // RemoveLocal deletes the entry from the local project config (./.claude/settings.json).
 func RemoveLocal() (bool, error) { return RemoveFrom(LocalPath()) }
 
-// RemoveFrom deletes the connector entry from configPath under "mcpServers",
-// preserving all other servers and root keys. If mcpServers becomes empty it is
-// removed. Returns (removed, error); removed is false when the file or entry is
-// absent. If the file cannot be parsed (e.g. duplicate keys in a large
-// .claude.json), it returns an error asking the user to remove the entry manually.
+// RemoveFrom deletes the connector entry from configPath under "mcpServers"
+// (both the current name and the legacy pre-rename name), preserving all other
+// servers and root keys. If mcpServers becomes empty it is removed. Returns
+// (removed, error); removed is false when the file or entry is absent. If the
+// file cannot be parsed (e.g. duplicate keys in a large .claude.json), it returns
+// an error asking the user to remove the entry manually.
 func RemoveFrom(configPath string) (bool, error) {
 	data, readErr := os.ReadFile(configPath)
 	if readErr != nil {
@@ -190,10 +196,13 @@ func RemoveFrom(configPath string) (bool, error) {
 	if err := json.Unmarshal(rawMCP, &mcpServers); err != nil {
 		return false, fmt.Errorf("parse mcpServers: %w", err)
 	}
-	if _, present := mcpServers[serverName]; !present {
+	_, hasCurrent := mcpServers[serverName]
+	_, hasLegacy := mcpServers[legacyServerName]
+	if !hasCurrent && !hasLegacy {
 		return false, nil
 	}
 	delete(mcpServers, serverName)
+	delete(mcpServers, legacyServerName)
 
 	if len(mcpServers) == 0 {
 		delete(root, "mcpServers")

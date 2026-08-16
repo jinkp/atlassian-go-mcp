@@ -45,7 +45,7 @@ func GlobalPath() string {
 //
 //	{
 //	  "mcpServers": {
-//	    "atlassian-platform-connector": {"command": "exe", "args": ["mcp"]}
+//	    "atlassian-mcp": {"command": "exe", "args": ["mcp"]}
 //	  },
 //	  "preferences": { ... },   <- preserved
 //	  "coworkUserFilesPath": "...", <- preserved
@@ -86,7 +86,8 @@ func SaveTo(configPath string, entry MCPEntry) error {
 	if marshalErr != nil {
 		return fmt.Errorf("marshal claude desktop MCP entry: %w", marshalErr)
 	}
-	mcpServers["atlassian-platform-connector"] = json.RawMessage(entryBytes)
+	mcpServers[serverName] = json.RawMessage(entryBytes)
+	delete(mcpServers, legacyServerName) // drop any pre-rename entry
 
 	mcpBytes, err := json.Marshal(mcpServers)
 	if err != nil {
@@ -121,15 +122,20 @@ func SaveWithArgs(args []string) error {
 }
 
 // serverName is the MCP entry key this tool registers under.
-const serverName = "atlassian-platform-connector"
+// legacyServerName is the pre-rename key, cleaned up on save/remove.
+const (
+	serverName       = "atlassian-mcp"
+	legacyServerName = "atlassian-platform-connector"
+)
 
-// Remove deletes the atlassian-platform-connector entry from GlobalPath()
+// Remove deletes the atlassian-mcp entry from GlobalPath()
 // (Claude Desktop is global-only). Preserves all other keys (preferences, etc.)
 // and other MCP servers. Returns (removed, error).
 func Remove() (bool, error) { return RemoveFrom(GlobalPath()) }
 
-// RemoveFrom deletes the connector entry from configPath under "mcpServers",
-// preserving every other key. If mcpServers becomes empty it is removed.
+// RemoveFrom deletes the connector entry from configPath under "mcpServers"
+// (both the current name and the legacy pre-rename name), preserving every other
+// key. If mcpServers becomes empty it is removed.
 func RemoveFrom(configPath string) (bool, error) {
 	data, readErr := os.ReadFile(configPath)
 	if readErr != nil {
@@ -152,10 +158,13 @@ func RemoveFrom(configPath string) (bool, error) {
 	if err := json.Unmarshal(rawMCP, &mcpServers); err != nil {
 		return false, fmt.Errorf("parse mcpServers: %w", err)
 	}
-	if _, present := mcpServers[serverName]; !present {
+	_, hasCurrent := mcpServers[serverName]
+	_, hasLegacy := mcpServers[legacyServerName]
+	if !hasCurrent && !hasLegacy {
 		return false, nil
 	}
 	delete(mcpServers, serverName)
+	delete(mcpServers, legacyServerName)
 
 	if len(mcpServers) == 0 {
 		delete(root, "mcpServers")

@@ -15,7 +15,7 @@ func TestRemoveFrom_PreservesOtherServers(t *testing.T) {
 	seed := `{
   "theme": "dark",
   "mcp": {
-    "atlassian-platform-connector": {"type":"local","command":["exe","mcp"],"enabled":true},
+    "atlassian-mcp": {"type":"local","command":["exe","mcp"],"enabled":true},
     "other-server": {"type":"local","command":["other"],"enabled":true}
   }
 }`
@@ -42,7 +42,7 @@ func TestRemoveFrom_PreservesOtherServers(t *testing.T) {
 	}
 	var mcp map[string]json.RawMessage
 	_ = json.Unmarshal(root["mcp"], &mcp)
-	if _, ok := mcp["atlassian-platform-connector"]; ok {
+	if _, ok := mcp["atlassian-mcp"]; ok {
 		t.Error("connector entry should be gone")
 	}
 	if _, ok := mcp["other-server"]; !ok {
@@ -53,7 +53,7 @@ func TestRemoveFrom_PreservesOtherServers(t *testing.T) {
 func TestRemoveFrom_OnlyEntryRemovesSection(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "opencode.json")
-	seed := `{"mcp":{"atlassian-platform-connector":{"type":"local","command":["exe","mcp"]}}}`
+	seed := `{"mcp":{"atlassian-mcp":{"type":"local","command":["exe","mcp"]}}}`
 	if err := os.WriteFile(configPath, []byte(seed), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -67,6 +67,30 @@ func TestRemoveFrom_OnlyEntryRemovesSection(t *testing.T) {
 	_ = json.Unmarshal(data, &root)
 	if _, ok := root["mcp"]; ok {
 		t.Error("empty mcp section should be removed")
+	}
+}
+
+func TestRemoveFrom_CleansLegacyName(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "opencode.json")
+	// A pre-rename install registered under the old name.
+	seed := `{"mcp":{"atlassian-platform-connector":{"type":"local","command":["exe","mcp"]}}}`
+	if err := os.WriteFile(configPath, []byte(seed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	removed, err := opencode.RemoveFrom(configPath)
+	if err != nil {
+		t.Fatalf("RemoveFrom: %v", err)
+	}
+	if !removed {
+		t.Fatal("expected removed=true for a legacy-named entry")
+	}
+	data, _ := os.ReadFile(configPath)
+	var root map[string]json.RawMessage
+	_ = json.Unmarshal(data, &root)
+	if _, ok := root["mcp"]; ok {
+		t.Error("legacy entry should be gone and empty mcp section removed")
 	}
 }
 
