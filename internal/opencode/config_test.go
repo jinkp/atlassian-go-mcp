@@ -151,6 +151,37 @@ func TestSave(t *testing.T) {
 		}
 	})
 
+	t.Run("env serialized as environment key", func(t *testing.T) {
+		dir := t.TempDir()
+		configPath := filepath.Join(dir, "opencode.json")
+
+		entryWithEnv := opencode.MCPEntry{
+			Type:    "local",
+			Command: "/usr/local/bin/atlassian-mcp",
+			Args:    []string{"mcp", "--enable", "all"},
+			Env:     map[string]string{"ENABLE_WRITE": "true"},
+		}
+
+		err := opencode.SaveTo(configPath, entryWithEnv)
+		if err != nil {
+			t.Fatalf("SaveTo() unexpected error: %v", err)
+		}
+
+		data, _ := os.ReadFile(configPath)
+		raw := string(data)
+
+		// OpenCode expects "environment", NOT "env"
+		if !strings.Contains(raw, `"environment"`) {
+			t.Errorf("config should contain 'environment' key, got:\n%s", raw)
+		}
+		if strings.Contains(raw, `"env"`) {
+			t.Errorf("config should NOT contain 'env' key (OpenCode uses 'environment'), got:\n%s", raw)
+		}
+		if !strings.Contains(raw, `"ENABLE_WRITE"`) {
+			t.Errorf("config missing ENABLE_WRITE value, got:\n%s", raw)
+		}
+	})
+
 	t.Run("corrupted file returns error without modifying file", func(t *testing.T) {
 		dir := t.TempDir()
 		configPath := filepath.Join(dir, "opencode.json")

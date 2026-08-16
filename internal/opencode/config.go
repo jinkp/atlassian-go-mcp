@@ -47,11 +47,12 @@ func SaveWithArgsLocal(args []string) error {
 // opencodeMCPEntry is the format OpenCode expects under the "mcp" key.
 // Command is a []string (binary + args combined), not a separate args field.
 // enabled:true is required for OpenCode to load the server on startup.
+// OpenCode uses "environment" (not "env") for environment variables.
 type opencodeMCPEntry struct {
-	Type    string            `json:"type"`
-	Command []string          `json:"command"`
-	Enabled bool              `json:"enabled"`
-	Env     map[string]string `json:"env,omitempty"`
+	Type        string            `json:"type"`
+	Command     []string          `json:"command"`
+	Enabled     bool              `json:"enabled"`
+	Environment map[string]string `json:"environment,omitempty"`
 }
 
 // Save writes entry under mcp.atlassian in the GlobalPath() file,
@@ -93,10 +94,10 @@ func SaveTo(configPath string, entry MCPEntry) error {
 	cmd = append(cmd, entry.Args...)
 
 	ocEntry := opencodeMCPEntry{
-		Type:    "local",
-		Command: cmd,
-		Enabled: true,
-		Env:     entry.Env,
+		Type:        "local",
+		Command:     cmd,
+		Enabled:     true,
+		Environment: entry.Env,
 	}
 
 	entryBytes, marshalErr := json.Marshal(ocEntry)
