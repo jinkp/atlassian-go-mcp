@@ -54,3 +54,29 @@ func LoadBitbucket() BitbucketCredentials {
 		Repo:      get(KeyBitbucketRepo),
 	}
 }
+
+// SaveBitbucket merges Bitbucket credentials into the shared file, preserving
+// every other line — including the ATLASSIAN_*/JIRA_API_TOKEN keys owned by the
+// Jira side. This mirrors bbk's own save behavior so both tools coexist in the
+// same file. Empty values are skipped (never written).
+func SaveBitbucket(c BitbucketCredentials) error {
+	return mergeEnvFile(SharedConfigPath(), map[string]string{
+		KeyBitbucketUsername:  c.Username,
+		KeyBitbucketAPIToken:  c.APIToken,
+		KeyBitbucketWorkspace: c.Workspace,
+		KeyBitbucketRepo:      c.Repo,
+	})
+}
+
+// ApplyBitbucket exports the Bitbucket workspace/repo defaults as environment
+// variables so tool calls without explicit args fall back to them. Credentials
+// (username/token) are passed to the client directly, not via env.
+func ApplyBitbucket(c BitbucketCredentials) {
+	set := func(key, val string) {
+		if val != "" && os.Getenv(key) == "" {
+			_ = os.Setenv(key, val)
+		}
+	}
+	set(KeyBitbucketWorkspace, c.Workspace)
+	set(KeyBitbucketRepo, c.Repo)
+}

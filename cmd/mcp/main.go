@@ -124,7 +124,10 @@ func newMCPCommand() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Load credentials from ~/.mcp/atlassian/.env (env vars still win).
+			// Homologated credentials: migrate any legacy ~/.mcp/atlassian/.env into the
+			// shared ~/.atlassian/credentials.env (one-time, non-destructive), then load
+			// from the shared file and export as env vars (env vars still win).
+			_ = envstore.MigrateLegacy()
 			envstore.Apply(envstore.Load())
 
 			cfg, err := mcpserver.ConfigFromEnv()

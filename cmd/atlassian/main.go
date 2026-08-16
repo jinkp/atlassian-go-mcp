@@ -36,6 +36,12 @@ func main() {
 }
 
 func buildRootCmd() *cobra.Command {
+	// Homologated credentials: migrate any legacy store into the shared
+	// ~/.atlassian/credentials.env, then export it as env vars (env vars win).
+	// This runs before configFromEnv() so the shared file populates the client.
+	_ = envstore.MigrateLegacy()
+	envstore.Apply(envstore.Load())
+
 	auditLog := audit.NewJSONLogger(os.Stderr)
 	var dryRun bool
 

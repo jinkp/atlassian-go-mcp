@@ -34,6 +34,11 @@ func main() {
 
 	log.SetOutput(os.Stderr)
 
+	// Homologated credentials: migrate any legacy store into the shared
+	// ~/.atlassian/credentials.env, then export it as env vars (env vars win).
+	_ = envstore.MigrateLegacy()
+	envstore.Apply(envstore.Load())
+
 	// Read required environment variables.
 	baseURL := os.Getenv("ATLASSIAN_BASE_URL")
 	if baseURL == "" {
