@@ -62,22 +62,46 @@ if (-not (Test-Path $InstallDir)) {
 }
 
 # -- Download binaries --------------------------------------------------------
+# Windows cannot overwrite a running .exe, but it CAN rename it aside. So when the
+# destination already exists (and may be locked by a running MCP server), we move
+# it to a .old file first, then drop the freshly downloaded binary into place.
+# The .old file is cleaned up on the next run once the process releases it — this
+# lets upgrades succeed even while the AI client keeps the server running.
 $downloaded = @()
 foreach ($bin in $Binaries) {
     $url  = "https://github.com/$Repo/releases/download/$Version/$bin"
     $dest = Join-Path $InstallDir $bin
     $tmp  = "$dest.tmp"
+    $old  = "$dest.old"
 
     Write-Step "Downloading $bin..."
     try {
+        # Clean leftovers from any previous interrupted run.
+        if (Test-Path $tmp) { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
+        if (Test-Path $old) { Remove-Item $old -Force -ErrorAction SilentlyContinue }
+
         Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing
+
+        if (Test-Path $dest) {
+            try {
+                # Rename works even if the exe is running (locked for write/delete).
+                Rename-Item -Path $dest -NewName ([System.IO.Path]::GetFileName($old)) -Force -ErrorAction Stop
+            } catch {
+                # Not locked — a plain remove is enough.
+                Remove-Item $dest -Force -ErrorAction Stop
+            }
+        }
+
         Move-Item -Path $tmp -Destination $dest -Force
         $sizeMB = [math]::Round((Get-Item $dest).Length / 1MB, 1)
         Write-Ok "$bin ($sizeMB MB)"
         $downloaded += $bin
+
+        # Best-effort cleanup of the renamed-aside old binary (may still be locked).
+        if (Test-Path $old) { Remove-Item $old -Force -ErrorAction SilentlyContinue }
     } catch {
         Write-Fail "Failed to download ${bin}: $_"
-        if (Test-Path $tmp) { Remove-Item $tmp -Force }
+        if (Test-Path $tmp) { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
     }
 }
 
