@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -179,13 +180,22 @@ func (m Model) handleCredentialsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.testRunning = true
 		m.testResults = nil
 		creds := m.currentCreds()
+		bbCreds := m.currentBitbucketCreds()
 		fs := toFeatureSet(m.modules)
-		return m, func() tea.Msg { return runConnectivityTests(creds, fs)() }
+		return m, func() tea.Msg { return runConnectivityTests(creds, bbCreds, fs)() }
 
 	case "ctrl+s":
-		// Save to .env and continue to test
+		// Save both Atlassian (Jira) and Bitbucket credentials into the shared
+		// file (each merge-by-line, preserving the other's keys), then test.
+		var saveErrs []string
 		if err := envstore.Save(m.currentCreds()); err != nil {
-			m.errMsg = "Could not save .env: " + err.Error()
+			saveErrs = append(saveErrs, err.Error())
+		}
+		if err := envstore.SaveBitbucket(m.currentBitbucketCreds()); err != nil {
+			saveErrs = append(saveErrs, err.Error())
+		}
+		if len(saveErrs) > 0 {
+			m.errMsg = "Could not save credentials: " + strings.Join(saveErrs, "; ")
 		} else {
 			m.errMsg = ""
 		}
@@ -194,8 +204,9 @@ func (m Model) handleCredentialsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.testRunning = true
 		m.testResults = nil
 		creds := m.currentCreds()
+		bbCreds := m.currentBitbucketCreds()
 		fs := toFeatureSet(m.modules)
-		return m, func() tea.Msg { return runConnectivityTests(creds, fs)() }
+		return m, func() tea.Msg { return runConnectivityTests(creds, bbCreds, fs)() }
 	}
 
 	return m, nil
@@ -225,8 +236,9 @@ func (m Model) handleTestKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.testRunning = true
 		m.testResults = nil
 		creds := m.currentCreds()
+		bbCreds := m.currentBitbucketCreds()
 		fs := toFeatureSet(m.modules)
-		return m, func() tea.Msg { return runConnectivityTests(creds, fs)() }
+		return m, func() tea.Msg { return runConnectivityTests(creds, bbCreds, fs)() }
 
 	case "enter":
 		// Continue to registration regardless of test results

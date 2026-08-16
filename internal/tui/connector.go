@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/bitbucket"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/client"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/goals"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
@@ -27,7 +28,7 @@ type testConnMsg struct {
 
 // runConnectivityTests performs one lightweight API call per enabled module
 // and returns results as a Bubbletea Cmd.
-func runConnectivityTests(creds envstore.Credentials, fs *features.FeatureSet) func() testConnMsg {
+func runConnectivityTests(creds envstore.Credentials, bbCreds envstore.BitbucketCredentials, fs *features.FeatureSet) func() testConnMsg {
 	return func() testConnMsg {
 		cfg := client.Config{
 			BaseURL:    creds.BaseURL,
@@ -79,7 +80,49 @@ func runConnectivityTests(creds envstore.Credentials, fs *features.FeatureSet) f
 			}
 		}
 
+		// Bitbucket — different host + credentials (BITBUCKET_USERNAME:API_TOKEN).
+		if fs.IsEnabled(features.ModuleBitbucket, false) {
+			results = append(results, pingBitbucket(ctx, bbCreds))
+		}
+
 		return testConnMsg{results: results}
+	}
+}
+
+// pingBitbucket calls GET https://api.bitbucket.org/2.0/user with Basic auth
+// (base64(username:apiToken)) to confirm Bitbucket credentials are valid.
+func pingBitbucket(ctx context.Context, bb envstore.BitbucketCredentials) TestResult {
+	if bb.Username == "" || bb.APIToken == "" {
+		return TestResult{Module: "bitbucket", OK: false, Message: "BITBUCKET_USERNAME/API_TOKEN not set"}
+	}
+	httpClient, err := client.NewClient(client.Config{
+		BaseURL:    bitbucket.CloudBaseURL,
+		Email:      bb.Username, // BasicAuth encodes username:apiToken
+		APIToken:   bb.APIToken,
+		MaxRetries: 1,
+		Timeout:    10 * time.Second,
+	})
+	if err != nil {
+		return TestResult{Module: "bitbucket", OK: false, Message: err.Error()}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, bitbucket.CloudBaseURL+"/user", nil)
+	if err != nil {
+		return TestResult{Module: "bitbucket", OK: false, Message: err.Error()}
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return TestResult{Module: "bitbucket", OK: false, Message: "network error: " + err.Error()}
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200:
+		return TestResult{Module: "bitbucket", OK: true, Message: "authenticated"}
+	case 401:
+		return TestResult{Module: "bitbucket", OK: false, Message: "401 unauthorized — check username/API token"}
+	case 403:
+		return TestResult{Module: "bitbucket", OK: false, Message: "403 forbidden"}
+	default:
+		return TestResult{Module: "bitbucket", OK: false, Message: fmt.Sprintf("HTTP %d", resp.StatusCode)}
 	}
 }
 

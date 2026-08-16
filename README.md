@@ -44,15 +44,20 @@ atlassian-mcp tui
 
 ### Selective module loading (MCP)
 
-By default the MCP server exposes all 37 tools. Use `--enable` to limit scope:
+By default the MCP server exposes all 60 tools. Use `--enable` to limit scope:
 
 ```powershell
 atlassian-mcp mcp --enable jira              # 7 tools (Jira only)
 atlassian-mcp mcp --enable jira-read         # 4 read-only tools
 atlassian-mcp mcp --enable jira,agile        # 15 tools
 atlassian-mcp mcp --enable goals,metrics     # 10 tools
-atlassian-mcp mcp --enable all               # 37 tools (default)
+atlassian-mcp mcp --enable bitbucket         # 21 tools (Bitbucket only)
+atlassian-mcp mcp --enable bitbucket-read    # 12 read-only tools
+atlassian-mcp mcp --enable all               # 60 tools (default)
 ```
+
+Available modules: `jira`, `agile`, `goals`, `metrics`, `releases`, `projects`,
+`teams`, `bitbucket`. Suffix any with `-read` or `-write` to control access.
 
 ---
 
@@ -93,9 +98,46 @@ go test ./...
 |----------|----------|-------------|
 | `ATLASSIAN_BASE_URL` | Yes | `https://your-org.atlassian.net` |
 | `ATLASSIAN_EMAIL` | Yes | Your Atlassian account email |
-| `ATLASSIAN_TOKEN` | Yes | API token from id.atlassian.com |
+| `ATLASSIAN_TOKEN` | Yes | Jira API token from id.atlassian.com |
 | `ATLASSIAN_ORG_ID` | For Teams | Organization UUID (required for `teams` commands) |
+| `BITBUCKET_USERNAME` | For Bitbucket | Bitbucket account (usually your Atlassian email) |
+| `BITBUCKET_API_TOKEN` | For Bitbucket | API token from id.atlassian.com |
+| `BITBUCKET_WORKSPACE` | No | Default workspace slug (overridable per call) |
+| `BITBUCKET_REPO` | No | Default repository slug (overridable per call) |
 | `ENABLE_WRITE=true` | No | Enables write tools in MCP server (default: disabled) |
+
+### Shared credentials file (homologated)
+
+All Atlassian MCP tools (this connector and `bbk`) read from a **single shared
+file**, so you configure credentials once:
+
+```
+~/.atlassian/credentials.env        # Windows: %USERPROFILE%\.atlassian\credentials.env
+```
+
+Override its location with `ATLASSIAN_SHARED_CONFIG`. Example contents:
+
+```dotenv
+# --- Jira / Confluence / Teams ---
+ATLASSIAN_BASE_URL=https://your-org.atlassian.net
+ATLASSIAN_EMAIL=you@company.com
+JIRA_API_TOKEN=your-jira-api-token
+ATLASSIAN_ORG_ID=your-org-uuid        # optional, Teams only
+# --- Bitbucket ---
+BITBUCKET_USERNAME=you@company.com
+BITBUCKET_API_TOKEN=your-bitbucket-api-token
+BITBUCKET_WORKSPACE=your-workspace     # optional default
+BITBUCKET_REPO=your-repo               # optional default
+```
+
+Notes:
+- The Jira token is stored as `JIRA_API_TOKEN` in the file but exported at runtime
+  as `ATLASSIAN_TOKEN` (what the services expect). Both are accepted on read.
+- Environment variables always **win** over the file.
+- Writes are **merge-by-line**: saving Jira credentials never touches the
+  `BITBUCKET_*` keys, and vice versa.
+- On first run, credentials from the legacy `~/.mcp/atlassian/.env` are migrated
+  automatically (non-destructively) into the shared file.
 
 ---
 
@@ -236,9 +278,37 @@ atlassian teams get <team-id>
 atlassian teams members <team-id> [--max-results 50]
 ```
 
+### Bitbucket
+
+```bash
+# Requires BITBUCKET_USERNAME + BITBUCKET_API_TOKEN (shared file or env)
+# --workspace / --repo default to BITBUCKET_WORKSPACE / BITBUCKET_REPO
+
+# Read
+atlassian bitbucket repos [--workspace <ws>]
+atlassian bitbucket branches | stale-branches [--days 30]
+atlassian bitbucket pipeline list
+atlassian bitbucket pr list [--state OPEN]
+atlassian bitbucket pr get|comments|commits|files|diff|checks|reviewers <id>
+
+# Write
+atlassian bitbucket pr create --title <t> --source <branch> --dest <branch>
+atlassian bitbucket pr comment <id> --body <text>
+atlassian bitbucket pr update <id> [--title ... --description ...]
+atlassian bitbucket pr approve|decline <id>
+atlassian bitbucket pr merge <id> [--strategy merge_commit|squash|fast_forward] [--message <m>]
+atlassian bitbucket pr task add <id> --body <text>
+atlassian bitbucket pr task resolve <id> <taskId>
+atlassian bitbucket pipeline run --branch <branch>
+
+# Local-only convenience (not exposed via MCP/REST)
+atlassian bitbucket pr checkout <id>    # git fetch + checkout the PR branch
+atlassian bitbucket pr open <id>        # open the PR in your browser
+```
+
 ---
 
-## MCP Server — 37 Tools
+## MCP Server — 60 Tools
 
 ```bash
 # Start server
@@ -329,9 +399,20 @@ ENABLE_WRITE=true ./atlassian-mcp mcp
 | `get_team` | `team_id` (req) | Get team by ID |
 | `get_team_members` | `team_id` (req), `max_results` (opt, default 50) | List team members |
 
+### Bitbucket Read (12)
+`bb_list_repos`, `bb_list_prs`, `bb_get_pr`, `bb_get_pr_comments`,
+`bb_get_pr_commits`, `bb_get_pr_files`, `bb_get_pr_diff`, `bb_get_pr_checks`,
+`bb_get_pr_reviewers`, `bb_list_branches`, `bb_list_stale_branches`,
+`bb_list_pipelines` — all take optional `workspace`/`repo` (fall back to env).
+
+### Bitbucket Write (9) — `ENABLE_WRITE=true`
+`bb_create_pr`, `bb_comment_pr`, `bb_update_pr`, `bb_approve_pr`,
+`bb_decline_pr`, `bb_merge_pr`, `bb_create_task`, `bb_resolve_task`,
+`bb_run_pipeline`.
+
 ---
 
-## REST API — 31 Endpoints
+## REST API — 52 Endpoints
 
 ```bash
 ./atlassian-api --port 8080 [--read-only]
@@ -386,6 +467,29 @@ PUT  /projects/{key}                       (X-Enable-Write: true)
 GET  /teams?query=...
 GET  /teams/{teamId}
 GET  /teams/{teamId}/members
+
+# Bitbucket
+GET  /bitbucket/repos
+GET  /bitbucket/pullrequests
+GET  /bitbucket/pullrequests/{id}
+GET  /bitbucket/pullrequests/{id}/comments
+GET  /bitbucket/pullrequests/{id}/commits
+GET  /bitbucket/pullrequests/{id}/files
+GET  /bitbucket/pullrequests/{id}/diff
+GET  /bitbucket/pullrequests/{id}/checks
+GET  /bitbucket/pullrequests/{id}/reviewers
+GET  /bitbucket/branches
+GET  /bitbucket/branches/stale
+GET  /bitbucket/pipelines
+POST /bitbucket/pullrequests                       (X-Enable-Write: true)
+POST /bitbucket/pullrequests/{id}/comments         (X-Enable-Write: true)
+PUT  /bitbucket/pullrequests/{id}                   (X-Enable-Write: true)
+POST /bitbucket/pullrequests/{id}/approve           (X-Enable-Write: true)
+POST /bitbucket/pullrequests/{id}/decline           (X-Enable-Write: true)
+POST /bitbucket/pullrequests/{id}/merge             (X-Enable-Write: true)
+POST /bitbucket/pullrequests/{id}/tasks             (X-Enable-Write: true)
+PUT  /bitbucket/pullrequests/{id}/tasks/{taskId}    (X-Enable-Write: true)
+POST /bitbucket/pipelines                           (X-Enable-Write: true)
 ```
 
 ### Error format

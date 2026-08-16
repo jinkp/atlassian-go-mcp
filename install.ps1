@@ -122,17 +122,25 @@ Write-Host ""
 Write-Host "    atlassian-mcp tui" -ForegroundColor Green
 Write-Host ""
 Write-Host "    The interactive TUI guides you through:" -ForegroundColor DarkGray
-Write-Host "      1. Select which modules to enable (jira, agile, goals, etc.)" -ForegroundColor Gray
-Write-Host "      2. Enter your Atlassian credentials" -ForegroundColor Gray
+Write-Host "      1. Select which modules to enable (jira, agile, goals, bitbucket, etc.)" -ForegroundColor Gray
+Write-Host "      2. Enter your Atlassian + Bitbucket credentials" -ForegroundColor Gray
 Write-Host "      3. Test connectivity to each service" -ForegroundColor Gray
 Write-Host "      4. Register the MCP server into your AI client" -ForegroundColor Gray
 Write-Host ""
+Write-Host "  Credentials are stored in a single shared file used by all Atlassian tools:" -ForegroundColor DarkGray
+Write-Host ('     {0}\.atlassian\credentials.env' -f $env:USERPROFILE) -ForegroundColor Gray
+Write-Host "     (override the location with the ATLASSIAN_SHARED_CONFIG env var)" -ForegroundColor DarkGray
+Write-Host ""
 Write-Host "  Manual setup:" -ForegroundColor White
 Write-Host ""
-Write-Host "  1. Set your credentials:" -ForegroundColor DarkGray
+Write-Host "  1. Set your credentials (env vars, or the shared file above):" -ForegroundColor DarkGray
+Write-Host '     # --- Jira / Confluence / Teams ---' -ForegroundColor DarkGray
 Write-Host '     $env:ATLASSIAN_BASE_URL = "https://your-org.atlassian.net"' -ForegroundColor Gray
 Write-Host '     $env:ATLASSIAN_EMAIL    = "you@company.com"' -ForegroundColor Gray
-Write-Host '     $env:ATLASSIAN_TOKEN    = "your-api-token"' -ForegroundColor Gray
+Write-Host '     $env:ATLASSIAN_TOKEN    = "your-jira-api-token"   # stored as JIRA_API_TOKEN' -ForegroundColor Gray
+Write-Host '     # --- Bitbucket (only if you enable the bitbucket module) ---' -ForegroundColor DarkGray
+Write-Host '     $env:BITBUCKET_USERNAME  = "you@company.com"' -ForegroundColor Gray
+Write-Host '     $env:BITBUCKET_API_TOKEN = "your-bitbucket-api-token"' -ForegroundColor Gray
 Write-Host '     # Get a token: https://id.atlassian.com/manage-profile/security/api-tokens' -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "  2. Register MCP server into your AI client:" -ForegroundColor DarkGray
@@ -145,6 +153,7 @@ Write-Host "  3. Try the CLI:" -ForegroundColor DarkGray
 Write-Host '     atlassian jira search --jql "project=PROJ"' -ForegroundColor Gray
 Write-Host "     atlassian agile sprint active --board-id 10" -ForegroundColor Gray
 Write-Host "     atlassian goals search --site-id <cloudId>" -ForegroundColor Gray
+Write-Host "     atlassian bitbucket pr list --workspace <ws> --repo <repo>" -ForegroundColor Gray
 Write-Host ""
 Write-Host "  Docs: https://github.com/$Repo" -ForegroundColor DarkGray
 Write-Host ""

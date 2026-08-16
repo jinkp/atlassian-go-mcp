@@ -103,6 +103,7 @@ var defaultModules = []ModuleConfig{
 	{Name: features.ModuleReleases, Enabled: true, Access: AccessReadWrite},
 	{Name: features.ModuleProjects, Enabled: true, Access: AccessReadWrite},
 	{Name: features.ModuleTeams, Enabled: true, Access: AccessReadWrite},
+	{Name: features.ModuleBitbucket, Enabled: true, Access: AccessReadWrite},
 }
 
 var defaultRegOpts = []RegOption{
@@ -120,6 +121,7 @@ func NewModel() Model {
 	copy(opts, defaultRegOpts)
 
 	creds := envstore.Load()
+	bb := envstore.LoadBitbucket()
 
 	m := Model{
 		screen:  ScreenModules,
@@ -128,8 +130,12 @@ func NewModel() Model {
 		credFields: []credField{
 			{Key: envstore.KeyBaseURL, Label: "ATLASSIAN_BASE_URL", Value: creds.BaseURL},
 			{Key: envstore.KeyEmail, Label: "ATLASSIAN_EMAIL", Value: creds.Email},
-			{Key: envstore.KeyToken, Label: "ATLASSIAN_TOKEN", Value: creds.Token, Masked: true},
+			{Key: envstore.KeyJiraToken, Label: "JIRA_API_TOKEN", Value: creds.Token, Masked: true},
 			{Key: envstore.KeyOrgID, Label: "ATLASSIAN_ORG_ID (optional — Teams only)", Value: creds.OrgID},
+			{Key: envstore.KeyBitbucketUsername, Label: "BITBUCKET_USERNAME (Bitbucket only)", Value: bb.Username},
+			{Key: envstore.KeyBitbucketAPIToken, Label: "BITBUCKET_API_TOKEN (Bitbucket only)", Value: bb.APIToken, Masked: true},
+			{Key: envstore.KeyBitbucketWorkspace, Label: "BITBUCKET_WORKSPACE (optional default)", Value: bb.Workspace},
+			{Key: envstore.KeyBitbucketRepo, Label: "BITBUCKET_REPO (optional default)", Value: bb.Repo},
 		},
 	}
 	copy(m.modules, defaultModules)
@@ -170,7 +176,7 @@ func (m Model) buildPreview() string {
 	return strings.Join(parts, ",")
 }
 
-// currentCreds assembles a Credentials from the credFields state.
+// currentCreds assembles Atlassian (Jira) Credentials from the credFields state.
 func (m Model) currentCreds() envstore.Credentials {
 	c := envstore.Credentials{}
 	for _, f := range m.credFields {
@@ -179,10 +185,28 @@ func (m Model) currentCreds() envstore.Credentials {
 			c.BaseURL = f.Value
 		case envstore.KeyEmail:
 			c.Email = f.Value
-		case envstore.KeyToken:
+		case envstore.KeyJiraToken:
 			c.Token = f.Value
 		case envstore.KeyOrgID:
 			c.OrgID = f.Value
+		}
+	}
+	return c
+}
+
+// currentBitbucketCreds assembles BitbucketCredentials from the credFields state.
+func (m Model) currentBitbucketCreds() envstore.BitbucketCredentials {
+	c := envstore.BitbucketCredentials{}
+	for _, f := range m.credFields {
+		switch f.Key {
+		case envstore.KeyBitbucketUsername:
+			c.Username = f.Value
+		case envstore.KeyBitbucketAPIToken:
+			c.APIToken = f.Value
+		case envstore.KeyBitbucketWorkspace:
+			c.Workspace = f.Value
+		case envstore.KeyBitbucketRepo:
+			c.Repo = f.Value
 		}
 	}
 	return c

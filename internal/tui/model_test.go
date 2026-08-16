@@ -41,8 +41,8 @@ func TestNewModel_InitialState(t *testing.T) {
 		t.Errorf("Preview: got %q, want 'all'", m.Preview())
 	}
 
-	// T1.2 + T1.5 all 7 modules enabled RW in order
-	wantModules := []string{"jira", "agile", "goals", "metrics", "releases", "projects", "teams"}
+	// T1.2 + T1.5 all 8 modules enabled RW in order
+	wantModules := []string{"jira", "agile", "goals", "metrics", "releases", "projects", "teams", "bitbucket"}
 	mods := m.Modules()
 	if len(mods) != len(wantModules) {
 		t.Fatalf("Modules len: got %d, want %d", len(mods), len(wantModules))
@@ -120,19 +120,19 @@ func TestNavigation(t *testing.T) {
 		t.Errorf("T4.3: cursor after down: got %d, want 1", m2.Cursor())
 	}
 
-	// T4.1: down on last → wraps to 0
+	// T4.1: down on last → wraps to 0 (8 modules → 8 downs from 0 wraps back)
 	mLast := m
-	for i := 0; i < 7; i++ {
+	for i := 0; i < 8; i++ {
 		mLast = pressKey(mLast, tea.KeyDown)
 	}
 	if mLast.Cursor() != 0 {
 		t.Errorf("T4.1: cursor should wrap to 0, got %d", mLast.Cursor())
 	}
 
-	// T4.2: up on first → wraps to last (6)
+	// T4.2: up on first → wraps to last (7)
 	m3 := pressKey(m, tea.KeyUp)
-	if m3.Cursor() != 6 {
-		t.Errorf("T4.2: cursor after up from 0: got %d, want 6", m3.Cursor())
+	if m3.Cursor() != 7 {
+		t.Errorf("T4.2: cursor after up from 0: got %d, want 7", m3.Cursor())
 	}
 
 	// j/k aliases
@@ -141,8 +141,8 @@ func TestNavigation(t *testing.T) {
 		t.Errorf("j: cursor: got %d, want 1", mj.Cursor())
 	}
 	mk := pressRune(m, 'k')
-	if mk.Cursor() != 6 {
-		t.Errorf("k from 0: cursor: got %d, want 6", mk.Cursor())
+	if mk.Cursor() != 7 {
+		t.Errorf("k from 0: cursor: got %d, want 7", mk.Cursor())
 	}
 }
 
