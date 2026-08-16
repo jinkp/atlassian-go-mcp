@@ -152,3 +152,65 @@ func SaveWithArgs(args []string) error {
 	}
 	return Save(MCPEntry{Command: exe, Args: args})
 }
+
+// serverName is the MCP entry key this tool registers under.
+const serverName = "atlassian-platform-connector"
+
+// Remove deletes the atlassian-platform-connector entry from GlobalPath().
+func Remove() (bool, error) { return RemoveFrom(GlobalPath()) }
+
+// RemoveLocal deletes the entry from the local project config (./.claude/settings.json).
+func RemoveLocal() (bool, error) { return RemoveFrom(LocalPath()) }
+
+// RemoveFrom deletes the connector entry from configPath under "mcpServers",
+// preserving all other servers and root keys. If mcpServers becomes empty it is
+// removed. Returns (removed, error); removed is false when the file or entry is
+// absent. If the file cannot be parsed (e.g. duplicate keys in a large
+// .claude.json), it returns an error asking the user to remove the entry manually.
+func RemoveFrom(configPath string) (bool, error) {
+	data, readErr := os.ReadFile(configPath)
+	if readErr != nil {
+		if os.IsNotExist(readErr) {
+			return false, nil
+		}
+		return false, fmt.Errorf("reading config %s: %w", configPath, readErr)
+	}
+
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(data, &root); err != nil {
+		return false, fmt.Errorf("cannot parse %s (possibly duplicate keys); "+
+			"remove the %q entry from mcpServers manually: %w", configPath, serverName, err)
+	}
+
+	rawMCP, ok := root["mcpServers"]
+	if !ok {
+		return false, nil
+	}
+	var mcpServers map[string]json.RawMessage
+	if err := json.Unmarshal(rawMCP, &mcpServers); err != nil {
+		return false, fmt.Errorf("parse mcpServers: %w", err)
+	}
+	if _, present := mcpServers[serverName]; !present {
+		return false, nil
+	}
+	delete(mcpServers, serverName)
+
+	if len(mcpServers) == 0 {
+		delete(root, "mcpServers")
+	} else {
+		b, err := json.Marshal(mcpServers)
+		if err != nil {
+			return false, fmt.Errorf("marshal mcpServers: %w", err)
+		}
+		root["mcpServers"] = json.RawMessage(b)
+	}
+
+	output, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		return false, fmt.Errorf("marshal config: %w", err)
+	}
+	if err := os.WriteFile(configPath, output, 0o644); err != nil {
+		return false, fmt.Errorf("write config %s: %w", configPath, err)
+	}
+	return true, nil
+}

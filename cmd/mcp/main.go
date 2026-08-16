@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -57,20 +58,39 @@ type setupRecord struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// saveSetupToEngram writes the registration record to ~/.mcp/atlassian/setup-history.json
-// so users can recall which clients are configured.
-func saveSetupToEngram(record setupRecord) {
-	historyPath := func() string {
-		home, _ := os.UserHomeDir()
-		return fmt.Sprintf("%s/.mcp/atlassian/setup-history.json", home)
-	}()
+// setupHistoryPath returns the path to the registration history file.
+func setupHistoryPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".mcp", "atlassian", "setup-history.json")
+}
 
+// loadSetupHistory reads the recorded registrations (empty slice if none).
+func loadSetupHistory() []setupRecord {
 	var records []setupRecord
-	if data, err := os.ReadFile(historyPath); err == nil {
+	if data, err := os.ReadFile(setupHistoryPath()); err == nil {
 		_ = json.Unmarshal(data, &records)
 	}
+	return records
+}
 
-	// Replace existing entry for same client+scope, or append
+// saveSetupHistory writes the registration history. If records is empty, the
+// history file is removed so the store reflects a clean state.
+func saveSetupHistory(records []setupRecord) {
+	p := setupHistoryPath()
+	if len(records) == 0 {
+		_ = os.Remove(p)
+		return
+	}
+	if data, err := json.MarshalIndent(records, "", "  "); err == nil {
+		_ = os.MkdirAll(filepath.Dir(p), 0o755)
+		_ = os.WriteFile(p, data, 0o644)
+	}
+}
+
+// saveSetupToEngram records a registration in ~/.mcp/atlassian/setup-history.json
+// so users (and the uninstall command) can recall which clients are configured.
+func saveSetupToEngram(record setupRecord) {
+	records := loadSetupHistory()
 	found := false
 	for i, r := range records {
 		if r.Client == record.Client && r.Scope == record.Scope {
@@ -82,13 +102,46 @@ func saveSetupToEngram(record setupRecord) {
 	if !found {
 		records = append(records, record)
 	}
+	saveSetupHistory(records)
+}
 
-	if data, err := json.MarshalIndent(records, "", "  "); err == nil {
-		_ = os.MkdirAll(fmt.Sprintf("%s/.mcp/atlassian", func() string {
-			home, _ := os.UserHomeDir()
-			return home
-		}()), 0o755)
-		_ = os.WriteFile(historyPath, data, 0o644)
+// removeSetupFromHistory drops the record for a given client+scope, if present.
+func removeSetupFromHistory(client, scope string) {
+	records := loadSetupHistory()
+	out := records[:0]
+	for _, r := range records {
+		if r.Client == client && r.Scope == scope {
+			continue
+		}
+		out = append(out, r)
+	}
+	saveSetupHistory(out)
+}
+
+// reportRemoval prints a consistent message for a single --remove operation and
+// updates the setup history when something was actually removed.
+func reportRemoval(client, scope, configPath string, removed bool) {
+	if removed {
+		fmt.Fprintf(os.Stdout, "Removed atlassian-platform-connector from %s\n", configPath)
+		removeSetupFromHistory(client, scope)
+		return
+	}
+	fmt.Fprintf(os.Stdout, "No atlassian-platform-connector entry found in %s\n", configPath)
+}
+
+// removeFromClient dispatches an unregister to the correct client config package.
+func removeFromClient(client, configPath string) (bool, error) {
+	switch client {
+	case "opencode":
+		return opencode.RemoveFrom(configPath)
+	case "claude":
+		return claude.RemoveFrom(configPath)
+	case "claude-desktop":
+		return claudedesktop.RemoveFrom(configPath)
+	case "cursor":
+		return cursor.RemoveFrom(configPath)
+	default:
+		return false, fmt.Errorf("unknown client %q", client)
 	}
 }
 
@@ -106,6 +159,7 @@ func main() {
 
 	root.AddCommand(newMCPCommand())
 	root.AddCommand(newSetupCommand())
+	root.AddCommand(newUninstallCommand())
 	root.AddCommand(NewTUICmd())
 	root.AddCommand(newVersionCommand())
 
@@ -199,14 +253,31 @@ func newSetupCommand() *cobra.Command {
 
 func newSetupOpenCodeCommand() *cobra.Command {
 	var scope string
+	var remove bool
 	cmd := &cobra.Command{
 		Use:   "opencode",
 		Short: "Register into OpenCode config",
 		Long: `Register atlassian-platform-connector into OpenCode.
 
   Global (default): ~/.config/opencode/opencode.json
-  Local:            ./opencode.json  (current project only)`,
+  Local:            ./opencode.json  (current project only)
+
+Pass --remove to unregister instead.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if remove {
+				configPath := opencode.GlobalPath()
+				fn := opencode.Remove
+				if scope == "local" {
+					configPath = opencode.LocalPath()
+					fn = opencode.RemoveLocal
+				}
+				removed, err := fn()
+				if err != nil {
+					return fmt.Errorf("removing from OpenCode config: %w", err)
+				}
+				reportRemoval("opencode", scope, configPath, removed)
+				return nil
+			}
 			binPath, err := resolvedBinaryPath()
 			if err != nil {
 				return err
@@ -229,19 +300,37 @@ func newSetupOpenCodeCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&scope, "scope", "global", "Where to register: global (default) or local (current project)")
+	cmd.Flags().BoolVar(&remove, "remove", false, "Unregister (remove) the entry instead of adding it")
 	return cmd
 }
 
 func newSetupClaudeCommand() *cobra.Command {
 	var scope string
+	var remove bool
 	cmd := &cobra.Command{
 		Use:   "claude",
 		Short: "Register into Claude Code config",
 		Long: `Register atlassian-platform-connector into Claude Code (CLI).
 
   Global (default): ~/.claude.json
-  Local:            ./.claude/settings.json  (current project only)`,
+  Local:            ./.claude/settings.json  (current project only)
+
+Pass --remove to unregister instead.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if remove {
+				configPath := claude.GlobalPath()
+				fn := claude.Remove
+				if scope == "local" {
+					configPath = claude.LocalPath()
+					fn = claude.RemoveLocal
+				}
+				removed, err := fn()
+				if err != nil {
+					return fmt.Errorf("removing from Claude config: %w", err)
+				}
+				reportRemoval("claude", scope, configPath, removed)
+				return nil
+			}
 			binPath, err := resolvedBinaryPath()
 			if err != nil {
 				return err
@@ -264,21 +353,31 @@ func newSetupClaudeCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&scope, "scope", "global", "Where to register: global (default) or local (current project)")
+	cmd.Flags().BoolVar(&remove, "remove", false, "Unregister (remove) the entry instead of adding it")
 	return cmd
 }
 
 func newSetupClaudeDesktopCommand() *cobra.Command {
-	return &cobra.Command{
+	var remove bool
+	cmd := &cobra.Command{
 		Use:   "claude-desktop",
 		Short: "Register into Claude Desktop (global only)",
-		Long:  `Register atlassian-platform-connector into Claude Desktop. Global only: %APPDATA%\Claude\claude_desktop_config.json`,
+		Long:  `Register atlassian-platform-connector into Claude Desktop. Global only: %APPDATA%\Claude\claude_desktop_config.json` + "\n\nPass --remove to unregister instead.",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			configPath := claudedesktop.GlobalPath()
+			if remove {
+				removed, err := claudedesktop.Remove()
+				if err != nil {
+					return fmt.Errorf("removing from Claude Desktop config: %w", err)
+				}
+				reportRemoval("claude-desktop", "global", configPath, removed)
+				return nil
+			}
 			binPath, err := resolvedBinaryPath()
 			if err != nil {
 				return err
 			}
 			entry := claudedesktop.MCPEntry{Command: binPath, Args: []string{"mcp"}}
-			configPath := claudedesktop.GlobalPath()
 			if err := claudedesktop.Save(entry); err != nil {
 				return fmt.Errorf("saving Claude Desktop config: %w", err)
 			}
@@ -287,18 +386,37 @@ func newSetupClaudeDesktopCommand() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&remove, "remove", false, "Unregister (remove) the entry instead of adding it")
+	return cmd
 }
 
 func newSetupCursorCommand() *cobra.Command {
 	var scope string
+	var remove bool
 	cmd := &cobra.Command{
 		Use:   "cursor",
 		Short: "Register into Cursor config",
 		Long: `Register atlassian-platform-connector into Cursor.
 
   Global (default): ~/.cursor/mcp.json
-  Local:            ./.cursor/mcp.json  (current project only)`,
+  Local:            ./.cursor/mcp.json  (current project only)
+
+Pass --remove to unregister instead.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if remove {
+				configPath := cursor.GlobalPath()
+				fn := cursor.Remove
+				if scope == "local" {
+					configPath = cursor.LocalPath()
+					fn = cursor.RemoveLocal
+				}
+				removed, err := fn()
+				if err != nil {
+					return fmt.Errorf("removing from Cursor config: %w", err)
+				}
+				reportRemoval("cursor", scope, configPath, removed)
+				return nil
+			}
 			binPath, err := resolvedBinaryPath()
 			if err != nil {
 				return err
@@ -321,7 +439,95 @@ func newSetupCursorCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&scope, "scope", "global", "Where to register: global (default) or local (current project)")
+	cmd.Flags().BoolVar(&remove, "remove", false, "Unregister (remove) the entry instead of adding it")
 	return cmd
+}
+
+// newUninstallCommand returns the `uninstall` command that unregisters the
+// connector from every AI client recorded in setup-history.json. It is the
+// symmetric counterpart of `setup`. It never deletes the shared credentials file
+// unless --purge-credentials is passed, and it does not remove the binaries or
+// PATH entry (that belongs to the installer script; a running executable cannot
+// delete itself on Windows).
+func newUninstallCommand() *cobra.Command {
+	var dryRun bool
+	var purgeCreds bool
+	cmd := &cobra.Command{
+		Use:   "uninstall",
+		Short: "Unregister the connector from all configured AI clients",
+		Long: `Unregister atlassian-platform-connector from every AI client recorded in
+~/.mcp/atlassian/setup-history.json (OpenCode, Claude Code, Claude Desktop, Cursor).
+
+Credentials in ~/.atlassian/credentials.env are KEPT by default because they are
+shared with other Atlassian tooling (e.g. bbk). Pass --purge-credentials to delete
+them. Binaries and the PATH entry are not touched here — see the printed hint.`,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			records := loadSetupHistory()
+			if len(records) == 0 {
+				fmt.Fprintln(os.Stdout, "No setup history found — no client registrations to remove.")
+			} else {
+				fmt.Fprintln(os.Stdout, "Unregistering from AI clients:")
+			}
+
+			var remaining []setupRecord
+			for _, r := range records {
+				label := fmt.Sprintf("%s (%s) → %s", r.Client, r.Scope, r.ConfigPath)
+				if dryRun {
+					fmt.Fprintf(os.Stdout, "  [dry-run] would remove %s\n", label)
+					remaining = append(remaining, r)
+					continue
+				}
+				removed, err := removeFromClient(r.Client, r.ConfigPath)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "  ! %s: %v\n", label, err)
+					remaining = append(remaining, r) // keep so the user can retry/fix
+					continue
+				}
+				if removed {
+					fmt.Fprintf(os.Stdout, "  removed    %s\n", label)
+				} else {
+					fmt.Fprintf(os.Stdout, "  not found  %s\n", label)
+				}
+			}
+			if !dryRun {
+				saveSetupHistory(remaining)
+			}
+
+			// Credentials — shared store, kept unless explicitly purged.
+			credPath := envstore.Path()
+			if purgeCreds {
+				if dryRun {
+					fmt.Fprintf(os.Stdout, "\n[dry-run] would delete credentials %s\n", credPath)
+				} else if err := os.Remove(credPath); err == nil {
+					fmt.Fprintf(os.Stdout, "\nDeleted credentials %s\n", credPath)
+				} else if !os.IsNotExist(err) {
+					fmt.Fprintf(os.Stderr, "\n! could not delete %s: %v\n", credPath, err)
+				}
+			} else {
+				fmt.Fprintf(os.Stdout, "\nCredentials kept at %s\n", credPath)
+				fmt.Fprintln(os.Stdout, "  (shared with other Atlassian tools; use --purge-credentials to delete)")
+			}
+
+			printBinaryCleanupHint()
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would be removed without changing anything")
+	cmd.Flags().BoolVar(&purgeCreds, "purge-credentials", false, "Also delete the shared credentials file (~/.atlassian/credentials.env)")
+	return cmd
+}
+
+// printBinaryCleanupHint prints the manual steps to remove the binaries and PATH
+// entry, which the CLI intentionally does not do (a running executable cannot
+// delete itself on Windows; PATH edits belong to the installer script).
+func printBinaryCleanupHint() {
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, ".mcp", "atlassian")
+	fmt.Fprintln(os.Stdout, "\nTo remove the binaries and PATH entry, run in a NEW terminal:")
+	fmt.Fprintf(os.Stdout, "  Remove-Item -Recurse -Force \"%s\"\n", dir)
+	fmt.Fprintf(os.Stdout, "  # then remove \"%s\" from your user PATH\n", dir)
 }
 
 // newVersionCommand returns the `version` subcommand that prints build info.

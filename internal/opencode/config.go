@@ -137,3 +137,63 @@ func SaveWithArgs(args []string) error {
 	}
 	return Save(MCPEntry{Type: "local", Command: exe, Args: args})
 }
+
+// serverName is the MCP entry key this tool registers under.
+const serverName = "atlassian-platform-connector"
+
+// Remove deletes the atlassian-platform-connector entry from GlobalPath().
+func Remove() (bool, error) { return RemoveFrom(GlobalPath()) }
+
+// RemoveLocal deletes the entry from the local project config (./opencode.json).
+func RemoveLocal() (bool, error) { return RemoveFrom(LocalPath()) }
+
+// RemoveFrom deletes the connector entry from configPath under the "mcp" key,
+// preserving all other keys and MCP servers. If the "mcp" section becomes empty
+// it is removed too. Returns (removed, error); removed is false when the file or
+// the entry does not exist.
+func RemoveFrom(configPath string) (bool, error) {
+	data, readErr := os.ReadFile(configPath)
+	if readErr != nil {
+		if os.IsNotExist(readErr) {
+			return false, nil
+		}
+		return false, fmt.Errorf("reading config %s: %w", configPath, readErr)
+	}
+
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(data, &root); err != nil {
+		return false, fmt.Errorf("parse config %s: %w", configPath, err)
+	}
+
+	rawMCP, ok := root["mcp"]
+	if !ok {
+		return false, nil
+	}
+	var mcpSection map[string]json.RawMessage
+	if err := json.Unmarshal(rawMCP, &mcpSection); err != nil {
+		return false, fmt.Errorf("parse mcp section: %w", err)
+	}
+	if _, present := mcpSection[serverName]; !present {
+		return false, nil
+	}
+	delete(mcpSection, serverName)
+
+	if len(mcpSection) == 0 {
+		delete(root, "mcp")
+	} else {
+		b, err := json.Marshal(mcpSection)
+		if err != nil {
+			return false, fmt.Errorf("marshal mcp section: %w", err)
+		}
+		root["mcp"] = json.RawMessage(b)
+	}
+
+	output, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		return false, fmt.Errorf("marshal config: %w", err)
+	}
+	if err := os.WriteFile(configPath, output, 0o644); err != nil {
+		return false, fmt.Errorf("write config %s: %w", configPath, err)
+	}
+	return true, nil
+}
