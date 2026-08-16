@@ -13,9 +13,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -38,6 +40,7 @@ import (
 	mcpserver "github.com/jinkp/atlassian-go-mcp/internal/mcp"
 	"github.com/jinkp/atlassian-go-mcp/internal/mcp/features"
 	"github.com/jinkp/atlassian-go-mcp/internal/opencode"
+	"github.com/jinkp/atlassian-go-mcp/internal/updatecheck"
 )
 
 // Build-time variables — injected via ldflags:
@@ -518,15 +521,52 @@ func printBinaryCleanupHint() {
 }
 
 // newVersionCommand returns the `version` subcommand that prints build info.
+// With --check it also queries GitHub for the latest release (read-only).
 func newVersionCommand() *cobra.Command {
-	return &cobra.Command{
+	var check bool
+	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Print version information",
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Fprintf(os.Stdout, "atlassian-mcp %s\n", version)
 			fmt.Fprintf(os.Stdout, "  commit: %s\n", commit)
 			fmt.Fprintf(os.Stdout, "  built:  %s\n", date)
+			if check {
+				checkForUpdate()
+			}
 		},
+	}
+	cmd.Flags().BoolVar(&check, "check", false, "Check GitHub for a newer release (read-only, no download)")
+	return cmd
+}
+
+// repoSlug is the GitHub repository used for update checks.
+const repoSlug = "jinkp/atlassian-go-mcp"
+
+// checkForUpdate queries the GitHub Releases API and prints whether a newer
+// version is available. It is best-effort: network/parse failures print a soft
+// note and never fail the command.
+func checkForUpdate() {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	latest, err := updatecheck.FetchLatestTag(ctx, http.DefaultClient, updatecheck.DefaultAPIBase, repoSlug)
+	if err != nil {
+		fmt.Fprintf(os.Stdout, "  update check: could not reach GitHub (%v)\n", err)
+		return
+	}
+
+	cmp, comparable := updatecheck.CompareSemver(version, latest)
+	switch {
+	case !comparable:
+		fmt.Fprintf(os.Stdout, "  latest release: %s\n", latest)
+	case cmp < 0:
+		fmt.Fprintf(os.Stdout, "  update available: %s → %s\n", version, latest)
+		fmt.Fprintln(os.Stdout, "  upgrade: irm https://raw.githubusercontent.com/jinkp/atlassian-go-mcp/main/install.ps1 | iex")
+	case cmp == 0:
+		fmt.Fprintf(os.Stdout, "  you are on the latest version (%s)\n", version)
+	default:
+		fmt.Fprintf(os.Stdout, "  you are ahead of the latest release (%s > %s)\n", version, latest)
 	}
 }
 
