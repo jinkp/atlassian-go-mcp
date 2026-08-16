@@ -9,6 +9,7 @@
 //	atlassian-mcp setup claude-desktop           # Register into Claude Desktop config
 //	atlassian-mcp setup cursor   [--scope local] # Register into Cursor config
 //	atlassian-mcp tui                            # Interactive TUI to configure modules
+//	atlassian-mcp version                        # Show version information
 package main
 
 import (
@@ -22,6 +23,7 @@ import (
 
 	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/agile"
+	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/bitbucket"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/client"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/goals"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
@@ -35,6 +37,15 @@ import (
 	mcpserver "github.com/jinkp/atlassian-go-mcp/internal/mcp"
 	"github.com/jinkp/atlassian-go-mcp/internal/mcp/features"
 	"github.com/jinkp/atlassian-go-mcp/internal/opencode"
+)
+
+// Build-time variables — injected via ldflags:
+//
+//	go build -ldflags "-X main.version=v1.2.0 -X main.commit=abc1234 -X main.date=2026-06-07" ./cmd/mcp
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
 )
 
 // setupRecord is saved to engram after a successful registration.
@@ -96,6 +107,7 @@ func main() {
 	root.AddCommand(newMCPCommand())
 	root.AddCommand(newSetupCommand())
 	root.AddCommand(NewTUICmd())
+	root.AddCommand(newVersionCommand())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -134,13 +146,36 @@ func newMCPCommand() *cobra.Command {
 			// at invocation time with an appropriate error — non-teams tools are unaffected.
 			orgID := os.Getenv("ATLASSIAN_ORG_ID")
 			teamsSvc := teams.NewService(httpClient, orgID)
+
+			// Bitbucket uses a DIFFERENT host (api.bitbucket.org) and DIFFERENT credentials
+			// (base64 username:apiToken), loaded from the shared ~/.atlassian/credentials.env.
+			// A dedicated client reuses the same transport stack (auth → idempotency → retry).
+			bbCreds := envstore.LoadBitbucket()
+			if bbCreds.Workspace != "" && os.Getenv("BITBUCKET_WORKSPACE") == "" {
+				_ = os.Setenv("BITBUCKET_WORKSPACE", bbCreds.Workspace)
+			}
+			if bbCreds.Repo != "" && os.Getenv("BITBUCKET_REPO") == "" {
+				_ = os.Setenv("BITBUCKET_REPO", bbCreds.Repo)
+			}
+			bbClient, err := client.NewClient(client.Config{
+				BaseURL:  bitbucket.CloudBaseURL,
+				Email:    bbCreds.Username, // BasicAuth encodes username:apiToken
+				APIToken: bbCreds.APIToken,
+			})
+			if err != nil {
+				return fmt.Errorf("building Bitbucket HTTP client: %w", err)
+			}
+			bitbucketSvc := bitbucket.NewService(bbClient, bitbucket.CloudBaseURL)
+
 			auditLog := audit.NewJSONLogger(os.Stderr)
 			fs := features.Parse(enableFlag)
-			return mcpserver.StartServer(svc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, auditLog, fs)
+			mcpserver.SetVersion(version)
+			mcpserver.LogStartupDiagnostics(os.Stderr, fs)
+			return mcpserver.StartServer(svc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, bitbucketSvc, auditLog, fs)
 		},
 	}
 	cmd.Flags().StringVar(&enableFlag, "enable", "all",
-		"Comma-separated modules to enable: jira,agile,goals,metrics,releases,projects,teams\n"+
+		"Comma-separated modules to enable: jira,agile,goals,metrics,releases,projects,teams,bitbucket\n"+
 			"Suffix -read or -write for access control (e.g. jira-read,agile).\n"+
 			"Default 'all' enables every tool.")
 	return cmd
@@ -284,6 +319,19 @@ func newSetupCursorCommand() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&scope, "scope", "global", "Where to register: global (default) or local (current project)")
 	return cmd
+}
+
+// newVersionCommand returns the `version` subcommand that prints build info.
+func newVersionCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print version information",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Fprintf(os.Stdout, "atlassian-mcp %s\n", version)
+			fmt.Fprintf(os.Stdout, "  commit: %s\n", commit)
+			fmt.Fprintf(os.Stdout, "  built:  %s\n", date)
+		},
+	}
 }
 
 // resolvedBinaryPath returns the absolute path of the running binary,

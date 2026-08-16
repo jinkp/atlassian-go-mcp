@@ -17,12 +17,14 @@ import (
 	"github.com/jinkp/atlassian-go-mcp/internal/api/handlers"
 	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/agile"
+	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/bitbucket"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/client"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/goals"
 	jira "github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/projects"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/releases"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/teams"
+	"github.com/jinkp/atlassian-go-mcp/internal/envstore"
 )
 
 func main() {
@@ -67,6 +69,25 @@ func main() {
 	// An empty orgID is allowed at startup — requests to /teams will fail at call time.
 	orgID := os.Getenv("ATLASSIAN_ORG_ID")
 	teamsSvc := teams.NewService(httpClient, orgID)
+
+	// Bitbucket uses its own host/credentials (BITBUCKET_*), loaded from the shared
+	// ~/.atlassian/credentials.env. Missing creds cause /bitbucket/* calls to fail at request time.
+	bbCreds := envstore.LoadBitbucket()
+	if bbCreds.Workspace != "" && os.Getenv("BITBUCKET_WORKSPACE") == "" {
+		_ = os.Setenv("BITBUCKET_WORKSPACE", bbCreds.Workspace)
+	}
+	if bbCreds.Repo != "" && os.Getenv("BITBUCKET_REPO") == "" {
+		_ = os.Setenv("BITBUCKET_REPO", bbCreds.Repo)
+	}
+	bbClient, err := client.NewClient(client.Config{
+		BaseURL:  bitbucket.CloudBaseURL,
+		Email:    bbCreds.Username,
+		APIToken: bbCreds.APIToken,
+	})
+	if err != nil {
+		log.Fatalf("building Bitbucket HTTP client: %v", err)
+	}
+	bitbucketSvc := bitbucket.NewService(bbClient, bitbucket.CloudBaseURL)
 
 	auditLog := audit.NewJSONLogger(os.Stderr)
 
@@ -117,9 +138,34 @@ func main() {
 		mux.HandleFunc("GET /teams", teamsH.GetTeams)
 		mux.HandleFunc("GET /teams/{teamId}", teamsH.GetTeam)
 		mux.HandleFunc("GET /teams/{teamId}/members", teamsH.GetTeamMembers)
+
+		bbH := handlers.NewBitbucketHandler(s.BitbucketSvc(), s.AuditLog())
+		// read
+		mux.HandleFunc("GET /bitbucket/repos", bbH.GetRepos)
+		mux.HandleFunc("GET /bitbucket/pullrequests", bbH.ListPRs)
+		mux.HandleFunc("GET /bitbucket/pullrequests/{id}", bbH.GetPR)
+		mux.HandleFunc("GET /bitbucket/pullrequests/{id}/comments", bbH.GetPRComments)
+		mux.HandleFunc("GET /bitbucket/pullrequests/{id}/commits", bbH.GetPRCommits)
+		mux.HandleFunc("GET /bitbucket/pullrequests/{id}/files", bbH.GetPRFiles)
+		mux.HandleFunc("GET /bitbucket/pullrequests/{id}/diff", bbH.GetPRDiff)
+		mux.HandleFunc("GET /bitbucket/pullrequests/{id}/checks", bbH.GetPRChecks)
+		mux.HandleFunc("GET /bitbucket/pullrequests/{id}/reviewers", bbH.GetPRReviewers)
+		mux.HandleFunc("GET /bitbucket/branches", bbH.GetBranches)
+		mux.HandleFunc("GET /bitbucket/branches/stale", bbH.GetStaleBranches)
+		mux.HandleFunc("GET /bitbucket/pipelines", bbH.GetPipelines)
+		// write (guarded by X-Enable-Write)
+		mux.HandleFunc("POST /bitbucket/pullrequests", bbH.CreatePR)
+		mux.HandleFunc("POST /bitbucket/pullrequests/{id}/comments", bbH.CommentPR)
+		mux.HandleFunc("PUT /bitbucket/pullrequests/{id}", bbH.UpdatePR)
+		mux.HandleFunc("POST /bitbucket/pullrequests/{id}/approve", bbH.ApprovePR)
+		mux.HandleFunc("POST /bitbucket/pullrequests/{id}/decline", bbH.DeclinePR)
+		mux.HandleFunc("POST /bitbucket/pullrequests/{id}/merge", bbH.MergePR)
+		mux.HandleFunc("POST /bitbucket/pullrequests/{id}/tasks", bbH.CreateTask)
+		mux.HandleFunc("PUT /bitbucket/pullrequests/{id}/tasks/{taskId}", bbH.ResolveTask)
+		mux.HandleFunc("POST /bitbucket/pipelines", bbH.RunPipeline)
 	})
 
-	srv := api.NewServer(jiraSvc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, auditLog, *readOnly, *port)
+	srv := api.NewServer(jiraSvc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, bitbucketSvc, auditLog, *readOnly, *port)
 	log.Printf("atlassian-api: listening on :%d (read-only=%v)", *port, *readOnly)
 	log.Fatal(srv.Start())
 }

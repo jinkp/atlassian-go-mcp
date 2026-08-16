@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/bitbucket"
 	jira "github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
 )
 
@@ -62,6 +63,13 @@ func ErrToStatus(err error) (int, string) {
 		return http.StatusBadRequest, ErrCodeBadRequest
 	case errors.Is(err, jira.ErrConflict):
 		return http.StatusConflict, ErrCodeConflict
+	// Bitbucket sentinels (separate error set, same HTTP semantics).
+	case errors.Is(err, bitbucket.ErrNotFound):
+		return http.StatusNotFound, ErrCodeNotFound
+	case errors.Is(err, bitbucket.ErrUnauthorized):
+		return http.StatusUnauthorized, ErrCodeUnauthorized
+	case errors.Is(err, bitbucket.ErrRateLimit):
+		return http.StatusTooManyRequests, ErrCodeRateLimited
 	default:
 		return http.StatusInternalServerError, ErrCodeInternal
 	}

@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/agile"
+	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/bitbucket"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/client"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/goals"
 	jira "github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
@@ -18,6 +20,15 @@ import (
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/teams"
 	"github.com/jinkp/atlassian-go-mcp/internal/mcp/features"
 )
+
+// serverVersion is reported via the MCP protocol. Set via SetVersion before calling StartServer.
+var serverVersion = "dev"
+
+// SetVersion sets the version string reported by the MCP server.
+// Call this from main() before StartServer.
+func SetVersion(v string) {
+	serverVersion = v
+}
 
 // ConfigFromEnv reads the three required Atlassian env vars and returns a client.Config.
 // Returns a descriptive error naming the missing variable if any is absent.
@@ -43,21 +54,39 @@ func ConfigFromEnv() (client.Config, error) {
 }
 
 // WriteGuardCheck returns nil when ENABLE_WRITE=true, or an error otherwise.
+// When blocked, a diagnostic line is written to stderr so operators can see rejected attempts.
 // Future write tools MUST call this and return the error result via mcp.NewToolResultError.
 func WriteGuardCheck() error {
 	if os.Getenv("ENABLE_WRITE") == "true" {
 		return nil
 	}
+	fmt.Fprintln(os.Stderr, "[atlassian-mcp] BLOCKED: write operation rejected (ENABLE_WRITE is not set to \"true\")")
 	return errors.New("write operations disabled: set ENABLE_WRITE=true to enable write tools")
 }
 
+// LogStartupDiagnostics writes a configuration summary to w (typically os.Stderr).
+// Includes enabled modules, access levels, write guard status, and tool count.
+// Safe to call with a nil FeatureSet.
+func LogStartupDiagnostics(w io.Writer, fs *features.FeatureSet) {
+	writeGuard := "disabled"
+	if os.Getenv("ENABLE_WRITE") == "true" {
+		writeGuard = "enabled"
+	}
+	total := features.TotalToolCount()
+	enabled := fs.EnabledToolCount()
+	fmt.Fprintf(w, "[atlassian-mcp] version: %s\n", serverVersion)
+	fmt.Fprintf(w, "[atlassian-mcp] modules: %s\n", fs.Diagnostics())
+	fmt.Fprintf(w, "[atlassian-mcp] write guard: %s (ENABLE_WRITE=%s)\n", writeGuard, os.Getenv("ENABLE_WRITE"))
+	fmt.Fprintf(w, "[atlassian-mcp] tools: %d/%d registered\n", enabled, total)
+}
+
 // NewAtlassianServer creates a configured MCPServer with Atlassian tools registered
-// according to the provided FeatureSet. A nil FeatureSet enables all 37 tools (backward compat).
+// according to the provided FeatureSet. A nil FeatureSet enables all 60 tools (backward compat).
 // log receives an entry for every write operation (after WriteGuardCheck passes).
-func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc goals.GoalsService, releasesSvc releases.ReleasesService, projectsSvc projects.ProjectsService, teamsSvc teams.TeamsService, log audit.Logger, fs *features.FeatureSet) *server.MCPServer {
+func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc goals.GoalsService, releasesSvc releases.ReleasesService, projectsSvc projects.ProjectsService, teamsSvc teams.TeamsService, bitbucketSvc bitbucket.BitbucketService, log audit.Logger, fs *features.FeatureSet) *server.MCPServer {
 	s := server.NewMCPServer(
 		"atlassian-platform-connector",
-		"1.0.0",
+		serverVersion,
 		server.WithToolCapabilities(true),
 	)
 
@@ -670,6 +699,46 @@ func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc 
 			),
 			ToolGetReleaseIssues(releasesSvc),
 		)
+
+		s.AddTool(
+			mcp.NewTool(
+				"validate_release_for_deploy",
+				mcp.WithDescription("Run deploy-readiness validation rules against the issues linked to a release (via fixVersion)"),
+				mcp.WithString(
+					"project_key",
+					mcp.Required(),
+					mcp.Description("Project key, e.g. PROJ"),
+				),
+				mcp.WithString(
+					"release_name",
+					mcp.Required(),
+					mcp.Description("Release (fix version) name, e.g. 'v1.0.0'"),
+				),
+				mcp.WithString(
+					"rules",
+					mcp.Description("Comma-separated rule names to run (optional). Defaults to all_issues_done,no_critical_bugs_open,no_blocking_issues,min_issues_count"),
+				),
+			),
+			ToolValidateReleaseForDeploy(svc),
+		)
+
+		s.AddTool(
+			mcp.NewTool(
+				"generate_release_notes",
+				mcp.WithDescription("Generate Markdown release notes grouped by issue type for a release (via fixVersion)"),
+				mcp.WithString(
+					"project_key",
+					mcp.Required(),
+					mcp.Description("Project key, e.g. PROJ"),
+				),
+				mcp.WithString(
+					"release_name",
+					mcp.Required(),
+					mcp.Description("Release (fix version) name, e.g. 'v1.0.0'"),
+				),
+			),
+			ToolGenerateReleaseNotes(svc),
+		)
 	}
 
 	// --- RELEASES WRITE (2 tools) ---
@@ -860,6 +929,206 @@ func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc 
 	}
 	// TEAMS has no write tools currently.
 
+	// --- BITBUCKET READ (12 tools) ---
+	if fs.IsEnabled(features.ModuleBitbucket, false) {
+		wsDesc := mcp.WithString("workspace", mcp.Description("Bitbucket workspace slug (overrides BITBUCKET_WORKSPACE env)"))
+		repoDesc := mcp.WithString("repo", mcp.Description("Repository slug (overrides BITBUCKET_REPO env)"))
+		prIDDesc := mcp.WithNumber("pr_id", mcp.Required(), mcp.Description("Pull request ID"))
+
+		s.AddTool(
+			mcp.NewTool("bb_list_repos",
+				mcp.WithDescription("List Bitbucket repositories in a workspace"),
+				wsDesc,
+			),
+			ToolBitbucketListRepos(bitbucketSvc),
+		)
+
+		s.AddTool(
+			mcp.NewTool("bb_list_prs",
+				mcp.WithDescription("List pull requests for a Bitbucket repository"),
+				wsDesc, repoDesc,
+				mcp.WithString("state", mcp.Description("PR state filter: OPEN, MERGED, DECLINED, SUPERSEDED (default OPEN)")),
+			),
+			ToolBitbucketListPRs(bitbucketSvc),
+		)
+
+		s.AddTool(
+			mcp.NewTool("bb_get_pr",
+				mcp.WithDescription("Get details of a specific Bitbucket pull request"),
+				wsDesc, repoDesc, prIDDesc,
+			),
+			ToolBitbucketGetPR(bitbucketSvc),
+		)
+
+		s.AddTool(
+			mcp.NewTool("bb_pr_comments",
+				mcp.WithDescription("List comments on a Bitbucket pull request"),
+				wsDesc, repoDesc, prIDDesc,
+			),
+			ToolBitbucketPRComments(bitbucketSvc),
+		)
+
+		s.AddTool(
+			mcp.NewTool("bb_pr_commits",
+				mcp.WithDescription("List commits in a Bitbucket pull request"),
+				wsDesc, repoDesc, prIDDesc,
+			),
+			ToolBitbucketPRCommits(bitbucketSvc),
+		)
+
+		s.AddTool(
+			mcp.NewTool("bb_pr_files",
+				mcp.WithDescription("List files changed in a Bitbucket pull request (diffstat)"),
+				wsDesc, repoDesc, prIDDesc,
+			),
+			ToolBitbucketPRFiles(bitbucketSvc),
+		)
+
+		s.AddTool(
+			mcp.NewTool("bb_pr_diff",
+				mcp.WithDescription("Get the raw diff for a Bitbucket pull request"),
+				wsDesc, repoDesc, prIDDesc,
+			),
+			ToolBitbucketPRDiff(bitbucketSvc),
+		)
+
+		s.AddTool(
+			mcp.NewTool("bb_pr_checks",
+				mcp.WithDescription("Get build/pipeline status checks for a Bitbucket pull request"),
+				wsDesc, repoDesc, prIDDesc,
+			),
+			ToolBitbucketPRChecks(bitbucketSvc),
+		)
+
+		s.AddTool(
+			mcp.NewTool("bb_pr_reviewers",
+				mcp.WithDescription("List reviewers of a Bitbucket pull request"),
+				wsDesc, repoDesc, prIDDesc,
+			),
+			ToolBitbucketPRReviewers(bitbucketSvc),
+		)
+
+		s.AddTool(
+			mcp.NewTool("bb_list_branches",
+				mcp.WithDescription("List branches in a Bitbucket repository"),
+				wsDesc, repoDesc,
+			),
+			ToolBitbucketListBranches(bitbucketSvc),
+		)
+
+		s.AddTool(
+			mcp.NewTool("bb_stale_branches",
+				mcp.WithDescription("List Bitbucket branches with no commits in the last N days"),
+				wsDesc, repoDesc,
+				mcp.WithNumber("days", mcp.Description("Number of days to consider stale (default 30)")),
+			),
+			ToolBitbucketStaleBranches(bitbucketSvc),
+		)
+
+		s.AddTool(
+			mcp.NewTool("bb_list_pipelines",
+				mcp.WithDescription("List recent pipelines for a Bitbucket repository"),
+				wsDesc, repoDesc,
+			),
+			ToolBitbucketListPipelines(bitbucketSvc),
+		)
+	}
+
+	// --- BITBUCKET WRITE (6 tools) ---
+	if fs.IsEnabled(features.ModuleBitbucket, true) {
+		wsDesc := mcp.WithString("workspace", mcp.Description("Bitbucket workspace slug (overrides BITBUCKET_WORKSPACE env)"))
+		repoDesc := mcp.WithString("repo", mcp.Description("Repository slug (overrides BITBUCKET_REPO env)"))
+		prIDDesc := mcp.WithNumber("pr_id", mcp.Required(), mcp.Description("Pull request ID"))
+
+		s.AddTool(
+			mcp.NewTool("bb_create_pr",
+				mcp.WithDescription("Create a Bitbucket pull request. Requires ENABLE_WRITE=true."),
+				wsDesc, repoDesc,
+				mcp.WithString("title", mcp.Required(), mcp.Description("Pull request title")),
+				mcp.WithString("source", mcp.Required(), mcp.Description("Source branch name")),
+				mcp.WithString("destination", mcp.Required(), mcp.Description("Destination branch name")),
+				mcp.WithString("description", mcp.Description("Pull request description (optional)")),
+				mcp.WithString("reviewers", mcp.Description("Comma-separated reviewer nicknames or {uuid} values (optional)")),
+				mcp.WithBoolean("close_source_branch", mcp.Description("Close source branch after merge (optional)")),
+			),
+			ToolBitbucketCreatePR(bitbucketSvc, log),
+		)
+
+		s.AddTool(
+			mcp.NewTool("bb_comment_pr",
+				mcp.WithDescription("Add a comment to a Bitbucket pull request. Requires ENABLE_WRITE=true."),
+				wsDesc, repoDesc, prIDDesc,
+				mcp.WithString("message", mcp.Required(), mcp.Description("Comment text to post")),
+			),
+			ToolBitbucketCommentPR(bitbucketSvc, log),
+		)
+
+		s.AddTool(
+			mcp.NewTool("bb_update_pr",
+				mcp.WithDescription("Update a Bitbucket pull request (title/description/destination/reviewers). Requires ENABLE_WRITE=true. At least one optional field must be provided."),
+				wsDesc, repoDesc, prIDDesc,
+				mcp.WithString("title", mcp.Description("New pull request title (optional)")),
+				mcp.WithString("description", mcp.Description("New pull request description (optional)")),
+				mcp.WithString("destination", mcp.Description("New destination branch name (optional)")),
+				mcp.WithString("reviewers", mcp.Description("Comma-separated reviewer nicknames or {uuid} values; replaces existing reviewers (optional)")),
+			),
+			ToolBitbucketUpdatePR(bitbucketSvc, log),
+		)
+
+		s.AddTool(
+			mcp.NewTool("bb_approve_pr",
+				mcp.WithDescription("Approve a Bitbucket pull request. Requires ENABLE_WRITE=true. Idempotent."),
+				wsDesc, repoDesc, prIDDesc,
+			),
+			ToolBitbucketApprovePR(bitbucketSvc, log),
+		)
+
+		s.AddTool(
+			mcp.NewTool("bb_decline_pr",
+				mcp.WithDescription("Decline (reject) a Bitbucket pull request. Requires ENABLE_WRITE=true."),
+				wsDesc, repoDesc, prIDDesc,
+			),
+			ToolBitbucketDeclinePR(bitbucketSvc, log),
+		)
+
+		s.AddTool(
+			mcp.NewTool("bb_merge_pr",
+				mcp.WithDescription("Merge a Bitbucket pull request. Requires ENABLE_WRITE=true."),
+				wsDesc, repoDesc, prIDDesc,
+				mcp.WithString("strategy", mcp.Description("Merge strategy: merge_commit, squash, fast_forward, squash_fast_forward, rebase_fast_forward, rebase_merge (optional)")),
+				mcp.WithString("message", mcp.Description("Custom merge commit message (optional)")),
+			),
+			ToolBitbucketMergePR(bitbucketSvc, log),
+		)
+
+		s.AddTool(
+			mcp.NewTool("bb_run_pipeline",
+				mcp.WithDescription("Trigger a Bitbucket pipeline for a branch. Requires ENABLE_WRITE=true."),
+				wsDesc, repoDesc,
+				mcp.WithString("branch", mcp.Required(), mcp.Description("Branch to run the pipeline on")),
+			),
+			ToolBitbucketRunPipeline(bitbucketSvc, log),
+		)
+
+		s.AddTool(
+			mcp.NewTool("bb_create_pr_task",
+				mcp.WithDescription("Create a task on a Bitbucket pull request. Requires ENABLE_WRITE=true."),
+				wsDesc, repoDesc, prIDDesc,
+				mcp.WithString("message", mcp.Required(), mcp.Description("Task description text")),
+			),
+			ToolBitbucketCreatePRTask(bitbucketSvc, log),
+		)
+
+		s.AddTool(
+			mcp.NewTool("bb_resolve_pr_task",
+				mcp.WithDescription("Resolve a task on a Bitbucket pull request. Requires ENABLE_WRITE=true."),
+				wsDesc, repoDesc, prIDDesc,
+				mcp.WithNumber("task_id", mcp.Required(), mcp.Description("Task ID to resolve")),
+			),
+			ToolBitbucketResolvePRTask(bitbucketSvc, log),
+		)
+	}
+
 	return s
 }
 
@@ -867,8 +1136,8 @@ func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc 
 // projects.ProjectsService, teams.TeamsService, an audit.Logger, and a FeatureSet into the MCP server
 // and starts the stdio loop. Blocks until the server exits. Call from cmd/mcp after setting
 // log.SetOutput(os.Stderr) to guarantee stdout discipline.
-// A nil FeatureSet enables all 37 tools.
-func StartServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc goals.GoalsService, releasesSvc releases.ReleasesService, projectsSvc projects.ProjectsService, teamsSvc teams.TeamsService, auditLog audit.Logger, fs *features.FeatureSet) error {
-	s := NewAtlassianServer(svc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, auditLog, fs)
+// A nil FeatureSet enables all 60 tools.
+func StartServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc goals.GoalsService, releasesSvc releases.ReleasesService, projectsSvc projects.ProjectsService, teamsSvc teams.TeamsService, bitbucketSvc bitbucket.BitbucketService, auditLog audit.Logger, fs *features.FeatureSet) error {
+	s := NewAtlassianServer(svc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, bitbucketSvc, auditLog, fs)
 	return server.ServeStdio(s)
 }

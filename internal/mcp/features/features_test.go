@@ -182,8 +182,8 @@ func TestEnabledToolCount(t *testing.T) {
 		input string
 		want  int
 	}{
-		{"F3.1 all → 37", "all", 37},
-		{"F3.2 empty → 37", "", 37},
+		{"F3.1 all → 60", "all", 60},
+		{"F3.2 empty → 60", "", 60},
 		{"F3.3 jira → 7", "jira", 7},
 		{"F3.4 jira-read → 4", "jira-read", 4},
 		{"F3.5 jira-write → 3", "jira-write", 3},
@@ -191,9 +191,12 @@ func TestEnabledToolCount(t *testing.T) {
 		{"F3.7 goals → 6", "goals", 6},
 		{"F3.8 metrics → 4", "metrics", 4},
 		{"F3.9 goals,metrics → 10", "goals,metrics", 10},
-		{"F3.10 releases → 5", "releases", 5},
+		{"F3.10 releases → 7", "releases", 7},
 		{"F3.11 projects → 4", "projects", 4},
 		{"F3.12 teams → 3", "teams", 3},
+		{"F3.15 bitbucket → 21", "bitbucket", 21},
+		{"F3.16 bitbucket-read → 12", "bitbucket-read", 12},
+		{"F3.17 bitbucket-write → 9", "bitbucket-write", 9},
 		{"F3.13 unknown → 0", "unknown", 0},
 		{"F3.14 jira,agile → 15", "jira,agile", 15},
 	}
@@ -230,6 +233,73 @@ func TestString(t *testing.T) {
 				t.Errorf("Parse(%q).String(): got %q, want %q", tc.input, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestDiagnostics covers the human-readable module summary.
+func TestDiagnostics(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		nilFS   bool
+		want    string
+	}{
+		{
+			name:  "nil fs returns all modules enabled",
+			nilFS: true,
+			want:  "all modules enabled (rw)",
+		},
+		{
+			name:  "all → every module (rw)",
+			input: "all",
+			want:  "jira(rw), agile(rw), goals(rw), metrics(rw), releases(rw), projects(rw), teams(rw), bitbucket(rw)",
+		},
+		{
+			name:  "jira only → jira(rw), rest (--)",
+			input: "jira",
+			want:  "jira(rw), agile(--), goals(--), metrics(--), releases(--), projects(--), teams(--), bitbucket(--)",
+		},
+		{
+			name:  "jira-read → jira(r)",
+			input: "jira-read",
+			want:  "jira(r), agile(--), goals(--), metrics(--), releases(--), projects(--), teams(--), bitbucket(--)",
+		},
+		{
+			name:  "jira-write → jira(w)",
+			input: "jira-write",
+			want:  "jira(w), agile(--), goals(--), metrics(--), releases(--), projects(--), teams(--), bitbucket(--)",
+		},
+		{
+			name:  "mixed → jira(rw), agile(r)",
+			input: "jira,agile-read",
+			want:  "jira(rw), agile(r), goals(--), metrics(--), releases(--), projects(--), teams(--), bitbucket(--)",
+		},
+		{
+			name:  "unknown only → all (--)",
+			input: "unknown",
+			want:  "jira(--), agile(--), goals(--), metrics(--), releases(--), projects(--), teams(--), bitbucket(--)",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var fs *FeatureSet
+			if !tc.nilFS {
+				fs = Parse(tc.input)
+			}
+			got := fs.Diagnostics()
+			if got != tc.want {
+				t.Errorf("Diagnostics():\n  got:  %q\n  want: %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestTotalToolCount validates the exported total.
+func TestTotalToolCount(t *testing.T) {
+	got := TotalToolCount()
+	if got != 60 {
+		t.Errorf("TotalToolCount(): got %d, want 60", got)
 	}
 }
 

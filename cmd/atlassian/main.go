@@ -9,19 +9,22 @@ import (
 	"os"
 
 	atlcliagile "github.com/jinkp/atlassian-go-mcp/cmd/atlassian/agile"
+	atlclibitbucket "github.com/jinkp/atlassian-go-mcp/cmd/atlassian/bitbucket"
 	atlcligoals "github.com/jinkp/atlassian-go-mcp/cmd/atlassian/goals"
 	"github.com/jinkp/atlassian-go-mcp/cmd/atlassian/jira"
 	atlcliprojects "github.com/jinkp/atlassian-go-mcp/cmd/atlassian/projects"
 	atlclireleases "github.com/jinkp/atlassian-go-mcp/cmd/atlassian/releases"
 	atlcliteams "github.com/jinkp/atlassian-go-mcp/cmd/atlassian/teams"
 	"github.com/jinkp/atlassian-go-mcp/internal/audit"
-	atlclient "github.com/jinkp/atlassian-go-mcp/internal/atlassian/client"
 	agilesvc "github.com/jinkp/atlassian-go-mcp/internal/atlassian/agile"
+	bitbucketsvc "github.com/jinkp/atlassian-go-mcp/internal/atlassian/bitbucket"
+	atlclient "github.com/jinkp/atlassian-go-mcp/internal/atlassian/client"
 	goalssvc "github.com/jinkp/atlassian-go-mcp/internal/atlassian/goals"
 	jirasvc "github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
 	projectssvc "github.com/jinkp/atlassian-go-mcp/internal/atlassian/projects"
 	releasessvc "github.com/jinkp/atlassian-go-mcp/internal/atlassian/releases"
 	teamssvc "github.com/jinkp/atlassian-go-mcp/internal/atlassian/teams"
+	"github.com/jinkp/atlassian-go-mcp/internal/envstore"
 	"github.com/spf13/cobra"
 )
 
@@ -40,7 +43,11 @@ func buildRootCmd() *cobra.Command {
 		Use:   "atlassian",
 		Short: "CLI for Atlassian (Jira, Agile, Goals) operations",
 		// PersistentPreRunE validates env vars before any sub-command runs.
+		// Bitbucket commands use a different credential set than the Jira APIs.
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if isBitbucketCommand(cmd) {
+				return validateBitbucketEnv()
+			}
 			return validateEnv()
 		},
 	}
@@ -133,6 +140,28 @@ func buildRootCmd() *cobra.Command {
 	atlcliteams.RegisterCommands(teamsRoot, teamsSvc)
 	root.AddCommand(teamsRoot)
 
+	// Bitbucket subgroup — uses its own host/credentials (BITBUCKET_*), loaded from
+	// the shared ~/.atlassian/credentials.env. The client is always constructible
+	// (only BaseURL is required); missing creds are caught by PersistentPreRunE.
+	bbCreds := envstore.LoadBitbucket()
+	if bbCreds.Workspace != "" && os.Getenv("BITBUCKET_WORKSPACE") == "" {
+		_ = os.Setenv("BITBUCKET_WORKSPACE", bbCreds.Workspace)
+	}
+	if bbCreds.Repo != "" && os.Getenv("BITBUCKET_REPO") == "" {
+		_ = os.Setenv("BITBUCKET_REPO", bbCreds.Repo)
+	}
+	var bitbucketSvc bitbucketsvc.BitbucketService
+	if bbClient, bbErr := atlclient.NewClient(atlclient.Config{
+		BaseURL:  bitbucketsvc.CloudBaseURL,
+		Email:    bbCreds.Username,
+		APIToken: bbCreds.APIToken,
+	}); bbErr == nil {
+		bitbucketSvc = bitbucketsvc.NewService(bbClient, bitbucketsvc.CloudBaseURL)
+	}
+	bitbucketRoot := atlclibitbucket.NewBitbucketCmd()
+	atlclibitbucket.RegisterCommands(bitbucketRoot, bitbucketSvc, auditLog, dryRun)
+	root.AddCommand(bitbucketRoot)
+
 	return root
 }
 
@@ -144,6 +173,31 @@ func validateEnv() error {
 			fmt.Fprintf(os.Stderr, "error: %s is required\n", key)
 			os.Exit(1)
 		}
+	}
+	return nil
+}
+
+// isBitbucketCommand reports whether cmd belongs to the "bitbucket" subgroup.
+func isBitbucketCommand(cmd *cobra.Command) bool {
+	for c := cmd; c != nil; c = c.Parent() {
+		if c.Name() == "bitbucket" {
+			return true
+		}
+	}
+	return false
+}
+
+// validateBitbucketEnv checks that Bitbucket credentials are available (env vars
+// or the shared ~/.atlassian/credentials.env). Exits(1) with a clear message otherwise.
+func validateBitbucketEnv() error {
+	creds := envstore.LoadBitbucket()
+	if creds.Username == "" {
+		fmt.Fprintln(os.Stderr, "error: BITBUCKET_USERNAME is required (env or ~/.atlassian/credentials.env)")
+		os.Exit(1)
+	}
+	if creds.APIToken == "" {
+		fmt.Fprintln(os.Stderr, "error: BITBUCKET_API_TOKEN is required (env or ~/.atlassian/credentials.env)")
+		os.Exit(1)
 	}
 	return nil
 }

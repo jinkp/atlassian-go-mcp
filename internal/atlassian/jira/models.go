@@ -31,14 +31,15 @@ var (
 // Issue is the canonical domain model for a Jira issue.
 // All service methods return this struct — never raw JSON types.
 type Issue struct {
-	Key      string
-	Summary  string
-	Status   string
-	Assignee string
-	Priority string
-	Labels   []string
-	Created  time.Time
-	Updated  time.Time
+	Key       string
+	Summary   string
+	Status    string
+	IssueType string
+	Assignee  string
+	Priority  string
+	Labels    []string
+	Created   time.Time
+	Updated   time.Time
 }
 
 // SearchResult holds a page of Jira search results.
@@ -64,16 +65,21 @@ type IssueAPIResponse struct {
 }
 
 type issueFieldsJSON struct {
-	Summary  string          `json:"summary"`
-	Status   statusJSON      `json:"status"`
-	Assignee *assigneeJSON   `json:"assignee"`
-	Priority priorityJSON    `json:"priority"`
-	Labels   []string        `json:"labels"`
-	Created  string          `json:"created"`
-	Updated  string          `json:"updated"`
+	Summary   string          `json:"summary"`
+	Status    statusJSON      `json:"status"`
+	IssueType issueTypeJSON   `json:"issuetype"`
+	Assignee  *assigneeJSON   `json:"assignee"`
+	Priority  priorityJSON    `json:"priority"`
+	Labels    []string        `json:"labels"`
+	Created   string          `json:"created"`
+	Updated   string          `json:"updated"`
 }
 
 type statusJSON struct {
+	Name string `json:"name"`
+}
+
+type issueTypeJSON struct {
 	Name string `json:"name"`
 }
 
@@ -88,11 +94,12 @@ type priorityJSON struct {
 // ToIssue converts the raw API response into the domain Issue model.
 func (r IssueAPIResponse) ToIssue() Issue {
 	issue := Issue{
-		Key:      r.Key,
-		Summary:  r.Fields.Summary,
-		Status:   r.Fields.Status.Name,
-		Priority: r.Fields.Priority.Name,
-		Labels:   r.Fields.Labels,
+		Key:       r.Key,
+		Summary:   r.Fields.Summary,
+		Status:    r.Fields.Status.Name,
+		IssueType: r.Fields.IssueType.Name,
+		Priority:  r.Fields.Priority.Name,
+		Labels:    r.Fields.Labels,
 	}
 	if r.Fields.Labels == nil {
 		issue.Labels = []string{}
