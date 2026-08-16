@@ -30,6 +30,9 @@ atlassian-mcp setup claude      # Claude Code
 
 # Or use the interactive TUI to select which modules to enable
 atlassian-mcp tui
+
+# Check whether a newer release is available (read-only, no download)
+atlassian-mcp version --check
 ```
 
 > **For Teams module**: also set `$env:ATLASSIAN_ORG_ID = "your-org-uuid"`
