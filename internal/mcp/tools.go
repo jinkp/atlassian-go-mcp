@@ -199,12 +199,9 @@ func ToolUpdateJiraIssue(svc jira.Service, log audit.Logger) server.ToolHandlerF
 
 // ToolGetJiraTransitions returns an MCP tool handler that wraps jira.Service.GetTransitions.
 // Returns a JSON array of transitions in snake_case format.
+// This is a READ operation — no WriteGuardCheck required.
 func ToolGetJiraTransitions(svc jira.Service) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if err := WriteGuardCheck(); err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-
 		issueKey, err := req.RequireString("issue_key")
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("issue_key is required: %v", err)), nil

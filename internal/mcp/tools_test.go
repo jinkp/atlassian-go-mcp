@@ -518,9 +518,8 @@ func TestToolGetJiraTransitions(t *testing.T) {
 		wantContain string
 	}{
 		{
-			name:  "success returns JSON array with transitions",
-			setup: enableWrite,
-			args:  map[string]any{"issue_key": "PROJ-1"},
+			name: "success returns JSON array with transitions",
+			args: map[string]any{"issue_key": "PROJ-1"},
 			mockFn: func(ctx context.Context, key string) ([]jira.Transition, error) {
 				return []jira.Transition{
 					{ID: "11", Name: "In Progress", StatusCategory: "indeterminate"},
@@ -531,9 +530,8 @@ func TestToolGetJiraTransitions(t *testing.T) {
 			wantContain: `"id":"11"`,
 		},
 		{
-			name:  "success returns status_category in snake_case",
-			setup: enableWrite,
-			args:  map[string]any{"issue_key": "PROJ-1"},
+			name: "success returns status_category in snake_case",
+			args: map[string]any{"issue_key": "PROJ-1"},
 			mockFn: func(ctx context.Context, key string) ([]jira.Transition, error) {
 				return []jira.Transition{
 					{ID: "21", Name: "Done", StatusCategory: "done"},
@@ -543,9 +541,8 @@ func TestToolGetJiraTransitions(t *testing.T) {
 			wantContain: `"status_category"`,
 		},
 		{
-			name:  "empty transitions returns [] not null",
-			setup: enableWrite,
-			args:  map[string]any{"issue_key": "PROJ-2"},
+			name: "empty transitions returns [] not null",
+			args: map[string]any{"issue_key": "PROJ-2"},
 			mockFn: func(ctx context.Context, key string) ([]jira.Transition, error) {
 				return []jira.Transition{}, nil
 			},
@@ -553,25 +550,27 @@ func TestToolGetJiraTransitions(t *testing.T) {
 			wantContain: "[]",
 		},
 		{
-			name:        "write guard blocks when ENABLE_WRITE unset",
-			setup:       disableWrite,
-			args:        map[string]any{"issue_key": "PROJ-1"},
-			mockFn:      nil,
-			wantIsError: true,
-			wantContain: "write operations disabled",
+			name: "works without ENABLE_WRITE (read-only operation)",
+			setup: disableWrite,
+			args: map[string]any{"issue_key": "PROJ-1"},
+			mockFn: func(ctx context.Context, key string) ([]jira.Transition, error) {
+				return []jira.Transition{
+					{ID: "11", Name: "In Progress", StatusCategory: "indeterminate"},
+				}, nil
+			},
+			wantIsError: false,
+			wantContain: `"id":"11"`,
 		},
 		{
 			name:        "missing issue_key returns error",
-			setup:       enableWrite,
 			args:        map[string]any{},
 			mockFn:      nil,
 			wantIsError: true,
 			wantContain: "issue_key",
 		},
 		{
-			name:  "ErrNotFound forwarded",
-			setup: enableWrite,
-			args:  map[string]any{"issue_key": "PROJ-999"},
+			name: "ErrNotFound forwarded",
+			args: map[string]any{"issue_key": "PROJ-999"},
 			mockFn: func(ctx context.Context, key string) ([]jira.Transition, error) {
 				return nil, jira.ErrNotFound
 			},
