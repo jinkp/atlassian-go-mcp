@@ -1,0 +1,74 @@
+schema: spec-driven
+
+context: |
+  Language: Go 1.26 — module github.com/jinkp/atlassian-go-mcp
+  Architecture: Three-surface hexagonal — MCP (internal/mcp/), REST API (internal/api/), CLI (cmd/)
+    Domain services in internal/atlassian/<domain>/ (jira, agile, goals, metrics, releases, projects, teams, bitbucket)
+    Each domain: service.go + models.go. HTTP client: BasicAuth + Retry + Idempotency transports in internal/atlassian/client/
+    MCP tools gated by FeatureSet in internal/mcp/features/. Write tools call WriteGuardCheck() + audit log.
+  Testing: Go stdlib testing + net/http/httptest mocks; table-driven tests in every layer
+  Style: gofmt (built-in); no golangci-lint detected; conventional commits; no AI attribution
+
+strict_tdd: false
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - Identify affected surface(s) — MCP, REST API, CLI, or domain service
+  specs:
+    - Use Given/When/Then format for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Include sequence diagrams for complex flows
+    - Document architecture decisions with rationale
+    - Note which surfaces (MCP/REST/CLI) are affected and how
+  tasks:
+    - Group tasks by phase (infrastructure, implementation, testing)
+    - Use hierarchical numbering (1.1, 1.2, etc.)
+    - Keep tasks small enough to complete in one session
+  apply:
+    - Follow existing code patterns and conventions
+    - Load relevant coding skills for the project stack (go-testing, self-registering-mcp)
+    - New domain services MUST expose an interface; tools/handlers depend on the interface, not the concrete type
+    tdd: false
+    test_command: "go test ./..."
+  verify:
+    test_command: "go test ./..."
+    build_command: "go build ./..."
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas (large removals)
+
+testing:
+  strict_tdd: false
+  detected: "2026-08-16"
+
+  runner:
+    framework: go test (stdlib)
+    command: "go test ./..."
+
+  layers:
+    unit:
+      available: true
+      tool: "go test (stdlib)"
+    integration:
+      available: true
+      tool: "net/http/httptest (stdlib)"
+    e2e:
+      available: false
+      tool: ~
+
+  coverage:
+    available: true
+    command: "go test -cover ./..."
+
+  quality:
+    linter:
+      available: false
+      command: ~
+    type_checker:
+      available: true
+      command: "go vet ./..."
+    formatter:
+      available: true
+      command: "gofmt -l ."
