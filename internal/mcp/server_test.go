@@ -164,7 +164,7 @@ func TestLogStartupDiagnostics(t *testing.T) {
 				"[atlassian-mcp] version:",
 				"[atlassian-mcp] modules: all modules enabled (rw)",
 				"[atlassian-mcp] write guard: enabled (ENABLE_WRITE=true)",
-				"[atlassian-mcp] tools: 60/60 registered",
+				"[atlassian-mcp] tools: 67/67 registered",
 			},
 		},
 		{
@@ -175,7 +175,7 @@ func TestLogStartupDiagnostics(t *testing.T) {
 				"[atlassian-mcp] version:",
 				"[atlassian-mcp] modules: jira(rw)",
 				"[atlassian-mcp] write guard: disabled (ENABLE_WRITE=)",
-				"[atlassian-mcp] tools: 7/60 registered",
+				"[atlassian-mcp] tools: 14/67 registered",
 			},
 		},
 		{
@@ -186,7 +186,7 @@ func TestLogStartupDiagnostics(t *testing.T) {
 				"[atlassian-mcp] version:",
 				"[atlassian-mcp] modules: jira(r)",
 				"[atlassian-mcp] write guard: enabled (ENABLE_WRITE=true)",
-				"[atlassian-mcp] tools: 4/60 registered",
+				"[atlassian-mcp] tools: 8/67 registered",
 			},
 		},
 	}
@@ -439,7 +439,7 @@ func TestNewAtlassianServer_HasTools(t *testing.T) {
 	projectsSvc := &mockServerProjectsService{}
 	teamsSvc := &mockServerTeamsService{}
 	bitbucketSvc := &mockServerBitbucketService{}
-	// nil FeatureSet → all 60 tools registered (backward-compat default)
+	// nil FeatureSet → all 67 tools registered (backward-compat default)
 	s := mcpserver.NewAtlassianServer(svc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, bitbucketSvc, audit.NewNoopLogger(), nil)
 	if s == nil {
 		t.Fatal("NewAtlassianServer returned nil")

@@ -2,6 +2,8 @@
 package jira
 
 import (
+	"github.com/jinkp/atlassian-go-mcp/internal/audit"
+	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
 	"github.com/spf13/cobra"
 )
 
@@ -14,4 +16,23 @@ func NewJiraCmd() *cobra.Command {
 		Long:  "Read and search Jira issues using the Jira REST API v3.",
 	}
 	return cmd
+}
+
+// RegisterCommands attaches all jira sub-commands to root.
+func RegisterCommands(root *cobra.Command, svc jira.Service, auditLog audit.Logger, dryRun bool) {
+	// Existing commands
+	root.AddCommand(NewGetCmd(svc))
+	root.AddCommand(NewSearchCmd(svc))
+	root.AddCommand(NewCreateCmd(svc, auditLog, dryRun))
+	root.AddCommand(NewUpdateCmd(svc, auditLog, dryRun))
+	root.AddCommand(NewTransitionsCmd(svc))
+	root.AddCommand(NewTransitionCmd(svc, auditLog, dryRun))
+
+	// Phase 1 Block 4: new commands
+	root.AddCommand(NewUsersCmd(svc))
+	root.AddCommand(NewCommentCmd(svc, auditLog, dryRun))
+	root.AddCommand(NewLinkCmd(svc, auditLog, dryRun))
+	root.AddCommand(NewLinkTypesCmd(svc))
+	root.AddCommand(NewWorklogCmd(svc, auditLog, dryRun))
+	root.AddCommand(NewIssueTypesCmd(svc))
 }

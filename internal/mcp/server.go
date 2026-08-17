@@ -81,7 +81,7 @@ func LogStartupDiagnostics(w io.Writer, fs *features.FeatureSet) {
 }
 
 // NewAtlassianServer creates a configured MCPServer with Atlassian tools registered
-// according to the provided FeatureSet. A nil FeatureSet enables all 60 tools (backward compat).
+// according to the provided FeatureSet. A nil FeatureSet enables all 67 tools (backward compat).
 // log receives an entry for every write operation (after WriteGuardCheck passes).
 func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc goals.GoalsService, releasesSvc releases.ReleasesService, projectsSvc projects.ProjectsService, teamsSvc teams.TeamsService, bitbucketSvc bitbucket.BitbucketService, log audit.Logger, fs *features.FeatureSet) *server.MCPServer {
 	s := server.NewMCPServer(
@@ -150,6 +150,61 @@ func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc 
 				),
 			),
 			ToolGetJiraEpics(svc),
+		)
+
+		s.AddTool(
+			mcp.NewTool(
+				"lookup_jira_account_id",
+				mcp.WithDescription("Search Jira users by display name or email"),
+				mcp.WithString(
+					"query",
+					mcp.Required(),
+					mcp.Description("Search query — name or email fragment"),
+				),
+				mcp.WithNumber(
+					"max_results",
+					mcp.Description("Maximum number of users to return (default 10)"),
+				),
+			),
+			ToolLookupJiraAccountID(svc),
+		)
+
+		s.AddTool(
+			mcp.NewTool(
+				"get_issue_comments",
+				mcp.WithDescription("List comments on a Jira issue"),
+				mcp.WithString(
+					"issue_key",
+					mcp.Required(),
+					mcp.Description("Issue key, e.g. PROJ-123"),
+				),
+				mcp.WithNumber(
+					"max_results",
+					mcp.Description("Maximum number of comments to return (default 50)"),
+				),
+			),
+			ToolGetIssueComments(svc),
+		)
+
+		s.AddTool(
+			mcp.NewTool(
+				"get_issue_link_types",
+				mcp.WithDescription("List all available issue link types for this Jira instance"),
+			),
+			ToolGetIssueLinkTypes(svc),
+		)
+
+		s.AddTool(
+			mcp.NewTool(
+				"get_issue_type_metadata",
+				mcp.WithDescription("List valid issue types for a Jira project"),
+				mcp.WithString(
+					"project_key",
+					mcp.Required(),
+					mcp.Description("Project key, e.g. PROJ"),
+				),
+			),
+			ToolGetIssueTypeMetadata(svc),
 		)
 	}
 
@@ -239,6 +294,73 @@ func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc 
 				),
 			),
 			ToolTransitionJiraIssue(svc, log),
+		)
+
+		s.AddTool(
+			mcp.NewTool(
+				"add_comment_to_issue",
+				mcp.WithDescription("Add a comment to a Jira issue. Requires ENABLE_WRITE=true."),
+				mcp.WithString(
+					"issue_key",
+					mcp.Required(),
+					mcp.Description("Issue key, e.g. PROJ-123"),
+				),
+				mcp.WithString(
+					"body",
+					mcp.Required(),
+					mcp.Description("Comment body (plain text)"),
+				),
+			),
+			ToolAddCommentToIssue(svc, log),
+		)
+
+		s.AddTool(
+			mcp.NewTool(
+				"link_issues",
+				mcp.WithDescription("Create a link between two Jira issues. Requires ENABLE_WRITE=true."),
+				mcp.WithString(
+					"inward_issue",
+					mcp.Required(),
+					mcp.Description("Inward issue key, e.g. PROJ-1"),
+				),
+				mcp.WithString(
+					"outward_issue",
+					mcp.Required(),
+					mcp.Description("Outward issue key, e.g. PROJ-2"),
+				),
+				mcp.WithString(
+					"link_type",
+					mcp.Required(),
+					mcp.Description("Link type name, e.g. 'Blocks'"),
+				),
+			),
+			ToolLinkIssues(svc, log),
+		)
+
+		s.AddTool(
+			mcp.NewTool(
+				"add_worklog",
+				mcp.WithDescription("Log time spent on a Jira issue. Requires ENABLE_WRITE=true."),
+				mcp.WithString(
+					"issue_key",
+					mcp.Required(),
+					mcp.Description("Issue key, e.g. PROJ-123"),
+				),
+				mcp.WithString(
+					"time_spent",
+					mcp.Required(),
+					mcp.Description("Time spent, e.g. '3h 30m', '2h', '30m'"),
+				),
+				mcp.WithString(
+					"comment",
+					mcp.Description("Optional worklog comment (plain text)"),
+				),
+				mcp.WithString(
+					"started",
+					mcp.Description("Optional start time ISO 8601, e.g. '2026-08-16T10:00:00.000+0000'"),
+				),
+			),
+			ToolAddWorklog(svc, log),
 		)
 	}
 
@@ -1136,7 +1258,7 @@ func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc 
 // projects.ProjectsService, teams.TeamsService, an audit.Logger, and a FeatureSet into the MCP server
 // and starts the stdio loop. Blocks until the server exits. Call from cmd/mcp after setting
 // log.SetOutput(os.Stderr) to guarantee stdout discipline.
-// A nil FeatureSet enables all 60 tools.
+// A nil FeatureSet enables all 67 tools.
 func StartServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc goals.GoalsService, releasesSvc releases.ReleasesService, projectsSvc projects.ProjectsService, teamsSvc teams.TeamsService, bitbucketSvc bitbucket.BitbucketService, auditLog audit.Logger, fs *features.FeatureSet) error {
 	s := NewAtlassianServer(svc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, bitbucketSvc, auditLog, fs)
 	return server.ServeStdio(s)

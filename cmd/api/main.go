@@ -109,6 +109,14 @@ func main() {
 		mux.HandleFunc("PUT /jira/issues/{key}", jiraH.UpdateIssue)
 		mux.HandleFunc("GET /jira/issues/{key}/transitions", jiraH.GetTransitions)
 		mux.HandleFunc("POST /jira/issues/{key}/transitions", jiraH.TransitionIssue)
+		// Block 3: 7 new routes
+		mux.HandleFunc("GET /jira/users/search", jiraH.SearchUsers)
+		mux.HandleFunc("POST /jira/issues/{key}/comments", jiraH.AddComment)
+		mux.HandleFunc("GET /jira/issues/{key}/comments", jiraH.GetComments)
+		mux.HandleFunc("POST /jira/issues/links", jiraH.LinkIssues)
+		mux.HandleFunc("GET /jira/issues/link-types", jiraH.GetIssueLinkTypes)
+		mux.HandleFunc("POST /jira/issues/{key}/worklogs", jiraH.AddWorklog)
+		mux.HandleFunc("GET /jira/projects/{key}/issue-types", jiraH.GetIssueTypeMetadata)
 
 		agileH := handlers.NewAgileHandler(s.AgileSvc(), s.AuditLog())
 		mux.HandleFunc("GET /agile/boards", agileH.GetBoards)

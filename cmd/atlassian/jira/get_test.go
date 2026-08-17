@@ -13,12 +13,19 @@ import (
 
 // mockJiraService implements jirasvc.Service for testing.
 type mockJiraService struct {
-	getIssueFunc      func(ctx context.Context, key string) (*jirasvc.Issue, error)
-	searchIssuesFunc  func(ctx context.Context, jql string, maxResults int) (*jirasvc.SearchResult, error)
-	createIssueFunc   func(ctx context.Context, req jirasvc.CreateIssueRequest) (*jirasvc.CreateIssueResponse, error)
-	updateIssueFunc   func(ctx context.Context, key string, req jirasvc.UpdateIssueRequest) error
-	getTransitionsFunc func(ctx context.Context, key string) ([]jirasvc.Transition, error)
-	transitionFunc    func(ctx context.Context, key string, transitionID string) error
+	getIssueFunc           func(ctx context.Context, key string) (*jirasvc.Issue, error)
+	searchIssuesFunc       func(ctx context.Context, jql string, maxResults int) (*jirasvc.SearchResult, error)
+	createIssueFunc        func(ctx context.Context, req jirasvc.CreateIssueRequest) (*jirasvc.CreateIssueResponse, error)
+	updateIssueFunc        func(ctx context.Context, key string, req jirasvc.UpdateIssueRequest) error
+	getTransitionsFunc     func(ctx context.Context, key string) ([]jirasvc.Transition, error)
+	transitionFunc         func(ctx context.Context, key string, transitionID string) error
+	lookupAccountIDFunc    func(ctx context.Context, query string, maxResults int) ([]jirasvc.User, error)
+	addCommentFunc         func(ctx context.Context, key string, body string) (*jirasvc.Comment, error)
+	getCommentsFunc        func(ctx context.Context, key string, maxResults int) ([]jirasvc.Comment, error)
+	linkIssuesFunc         func(ctx context.Context, inward, outward, linkTypeName string) error
+	getIssueLinkTypesFunc  func(ctx context.Context) ([]jirasvc.IssueLinkType, error)
+	addWorklogFunc         func(ctx context.Context, key string, req jirasvc.AddWorklogRequest) (*jirasvc.Worklog, error)
+	getIssueTypeMetaFunc   func(ctx context.Context, projectKey string) ([]jirasvc.IssueTypeMeta, error)
 }
 
 func (m *mockJiraService) GetIssue(ctx context.Context, key string) (*jirasvc.Issue, error) {
@@ -61,6 +68,55 @@ func (m *mockJiraService) TransitionIssue(ctx context.Context, key string, trans
 		return m.transitionFunc(ctx, key, transitionID)
 	}
 	return errors.New("not implemented")
+}
+
+func (m *mockJiraService) LookupAccountID(ctx context.Context, query string, maxResults int) ([]jirasvc.User, error) {
+	if m.lookupAccountIDFunc != nil {
+		return m.lookupAccountIDFunc(ctx, query, maxResults)
+	}
+	return nil, errors.New("not implemented")
+}
+
+func (m *mockJiraService) AddComment(ctx context.Context, key string, body string) (*jirasvc.Comment, error) {
+	if m.addCommentFunc != nil {
+		return m.addCommentFunc(ctx, key, body)
+	}
+	return nil, errors.New("not implemented")
+}
+
+func (m *mockJiraService) GetComments(ctx context.Context, key string, maxResults int) ([]jirasvc.Comment, error) {
+	if m.getCommentsFunc != nil {
+		return m.getCommentsFunc(ctx, key, maxResults)
+	}
+	return nil, errors.New("not implemented")
+}
+
+func (m *mockJiraService) LinkIssues(ctx context.Context, inward, outward, linkTypeName string) error {
+	if m.linkIssuesFunc != nil {
+		return m.linkIssuesFunc(ctx, inward, outward, linkTypeName)
+	}
+	return errors.New("not implemented")
+}
+
+func (m *mockJiraService) GetIssueLinkTypes(ctx context.Context) ([]jirasvc.IssueLinkType, error) {
+	if m.getIssueLinkTypesFunc != nil {
+		return m.getIssueLinkTypesFunc(ctx)
+	}
+	return nil, errors.New("not implemented")
+}
+
+func (m *mockJiraService) AddWorklog(ctx context.Context, key string, req jirasvc.AddWorklogRequest) (*jirasvc.Worklog, error) {
+	if m.addWorklogFunc != nil {
+		return m.addWorklogFunc(ctx, key, req)
+	}
+	return nil, errors.New("not implemented")
+}
+
+func (m *mockJiraService) GetIssueTypeMetadata(ctx context.Context, projectKey string) ([]jirasvc.IssueTypeMeta, error) {
+	if m.getIssueTypeMetaFunc != nil {
+		return m.getIssueTypeMetaFunc(ctx, projectKey)
+	}
+	return nil, errors.New("not implemented")
 }
 
 // --- Formatter validation tests (unit-testable without cobra) ---

@@ -9,8 +9,8 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	jira "github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
+	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	mcpserver "github.com/jinkp/atlassian-go-mcp/internal/mcp"
 )
 
@@ -31,6 +31,14 @@ type mockJiraService struct {
 	updateIssueFunc     func(ctx context.Context, key string, req jira.UpdateIssueRequest) error
 	getTransitionsFunc  func(ctx context.Context, key string) ([]jira.Transition, error)
 	transitionIssueFunc func(ctx context.Context, key string, transitionID string) error
+	// Phase 2 expansion methods:
+	lookupAccountIDFunc      func(ctx context.Context, query string, maxResults int) ([]jira.User, error)
+	addCommentFunc           func(ctx context.Context, key string, body string) (*jira.Comment, error)
+	getCommentsFunc          func(ctx context.Context, key string, maxResults int) ([]jira.Comment, error)
+	linkIssuesFunc           func(ctx context.Context, inward, outward, linkTypeName string) error
+	getIssueLinkTypesFunc    func(ctx context.Context) ([]jira.IssueLinkType, error)
+	addWorklogFunc           func(ctx context.Context, key string, req jira.AddWorklogRequest) (*jira.Worklog, error)
+	getIssueTypeMetadataFunc func(ctx context.Context, projectKey string) ([]jira.IssueTypeMeta, error)
 }
 
 func (m *mockJiraService) GetIssue(ctx context.Context, key string) (*jira.Issue, error) {
@@ -67,6 +75,55 @@ func (m *mockJiraService) TransitionIssue(ctx context.Context, key string, trans
 		return m.transitionIssueFunc(ctx, key, transitionID)
 	}
 	return nil
+}
+
+func (m *mockJiraService) LookupAccountID(ctx context.Context, query string, maxResults int) ([]jira.User, error) {
+	if m.lookupAccountIDFunc != nil {
+		return m.lookupAccountIDFunc(ctx, query, maxResults)
+	}
+	return []jira.User{}, nil
+}
+
+func (m *mockJiraService) AddComment(ctx context.Context, key string, body string) (*jira.Comment, error) {
+	if m.addCommentFunc != nil {
+		return m.addCommentFunc(ctx, key, body)
+	}
+	return nil, nil
+}
+
+func (m *mockJiraService) GetComments(ctx context.Context, key string, maxResults int) ([]jira.Comment, error) {
+	if m.getCommentsFunc != nil {
+		return m.getCommentsFunc(ctx, key, maxResults)
+	}
+	return []jira.Comment{}, nil
+}
+
+func (m *mockJiraService) LinkIssues(ctx context.Context, inward, outward, linkTypeName string) error {
+	if m.linkIssuesFunc != nil {
+		return m.linkIssuesFunc(ctx, inward, outward, linkTypeName)
+	}
+	return nil
+}
+
+func (m *mockJiraService) GetIssueLinkTypes(ctx context.Context) ([]jira.IssueLinkType, error) {
+	if m.getIssueLinkTypesFunc != nil {
+		return m.getIssueLinkTypesFunc(ctx)
+	}
+	return []jira.IssueLinkType{}, nil
+}
+
+func (m *mockJiraService) AddWorklog(ctx context.Context, key string, req jira.AddWorklogRequest) (*jira.Worklog, error) {
+	if m.addWorklogFunc != nil {
+		return m.addWorklogFunc(ctx, key, req)
+	}
+	return nil, nil
+}
+
+func (m *mockJiraService) GetIssueTypeMetadata(ctx context.Context, projectKey string) ([]jira.IssueTypeMeta, error) {
+	if m.getIssueTypeMetadataFunc != nil {
+		return m.getIssueTypeMetadataFunc(ctx, projectKey)
+	}
+	return []jira.IssueTypeMeta{}, nil
 }
 
 // makeCallToolRequest builds a mcp.CallToolRequest with the given arguments map.
@@ -550,9 +607,9 @@ func TestToolGetJiraTransitions(t *testing.T) {
 			wantContain: "[]",
 		},
 		{
-			name: "works without ENABLE_WRITE (read-only operation)",
+			name:  "works without ENABLE_WRITE (read-only operation)",
 			setup: disableWrite,
-			args: map[string]any{"issue_key": "PROJ-1"},
+			args:  map[string]any{"issue_key": "PROJ-1"},
 			mockFn: func(ctx context.Context, key string) ([]jira.Transition, error) {
 				return []jira.Transition{
 					{ID: "11", Name: "In Progress", StatusCategory: "indeterminate"},

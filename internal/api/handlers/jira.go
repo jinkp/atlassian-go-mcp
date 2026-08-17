@@ -80,12 +80,12 @@ func (h *JiraHandler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req := jira.CreateIssueRequest{
-		ProjectKey:  body.ProjectKey,
-		IssueType:   body.IssueType,
-		Summary:     body.Summary,
-		Description: body.Description,
-		AssigneeID:  body.AssigneeID,
-		Labels:      body.Labels,
+		ProjectKey:   body.ProjectKey,
+		IssueType:    body.IssueType,
+		Summary:      body.Summary,
+		Description:  body.Description,
+		AssigneeID:   body.AssigneeID,
+		Labels:       body.Labels,
 		PriorityName: body.Priority,
 	}
 
@@ -118,9 +118,9 @@ func (h *JiraHandler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req := jira.UpdateIssueRequest{
-		Summary:     body.Summary,
-		Description: body.Description,
-		AssigneeID:  body.AssigneeID,
+		Summary:      body.Summary,
+		Description:  body.Description,
+		AssigneeID:   body.AssigneeID,
 		PriorityName: body.Priority,
 	}
 
@@ -173,4 +173,167 @@ func (h *JiraHandler) TransitionIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api.RespondJSON(w, http.StatusOK, map[string]string{"status": "transitioned", "key": key})
+}
+
+// --- Block 3: 7 new handlers ---
+
+// SearchUsers handles GET /jira/users/search?query=&maxResults=.
+func (h *JiraHandler) SearchUsers(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("query")
+	if query == "" {
+		api.RespondError(w, http.StatusBadRequest, "query is required", api.ErrCodeBadRequest)
+		return
+	}
+	maxResults := 10
+	if mr := r.URL.Query().Get("maxResults"); mr != "" {
+		if v, err := strconv.Atoi(mr); err == nil && v > 0 {
+			maxResults = v
+		}
+	}
+	users, err := h.svc.LookupAccountID(r.Context(), query, maxResults)
+	if err != nil {
+		status, code := api.ErrToStatus(err)
+		api.RespondError(w, status, err.Error(), code)
+		return
+	}
+	api.RespondJSON(w, http.StatusOK, users)
+}
+
+// addCommentBody is the JSON request body for AddComment.
+type addCommentBody struct {
+	Body string `json:"body"`
+}
+
+// AddComment handles POST /jira/issues/{key}/comments.
+// Write-guarded by WriteGuardMiddleware (X-Enable-Write: true required).
+func (h *JiraHandler) AddComment(w http.ResponseWriter, r *http.Request) {
+	key := r.PathValue("key")
+
+	var body addCommentBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		api.RespondError(w, http.StatusBadRequest, "invalid request body: "+err.Error(), api.ErrCodeBadRequest)
+		return
+	}
+	if body.Body == "" {
+		api.RespondError(w, http.StatusBadRequest, "body is required", api.ErrCodeBadRequest)
+		return
+	}
+
+	comment, err := h.svc.AddComment(r.Context(), key, body.Body)
+	h.auditLog.Log(audit.NewEntry("add_comment", "jira", map[string]any{"key": key}, err))
+	if err != nil {
+		status, code := api.ErrToStatus(err)
+		api.RespondError(w, status, err.Error(), code)
+		return
+	}
+	api.RespondJSON(w, http.StatusCreated, comment)
+}
+
+// GetComments handles GET /jira/issues/{key}/comments?maxResults=.
+func (h *JiraHandler) GetComments(w http.ResponseWriter, r *http.Request) {
+	key := r.PathValue("key")
+	maxResults := 50
+	if mr := r.URL.Query().Get("maxResults"); mr != "" {
+		if v, err := strconv.Atoi(mr); err == nil && v > 0 {
+			maxResults = v
+		}
+	}
+	comments, err := h.svc.GetComments(r.Context(), key, maxResults)
+	if err != nil {
+		status, code := api.ErrToStatus(err)
+		api.RespondError(w, status, err.Error(), code)
+		return
+	}
+	api.RespondJSON(w, http.StatusOK, comments)
+}
+
+// linkIssuesBody is the JSON request body for LinkIssues.
+type linkIssuesBody struct {
+	InwardIssue  string `json:"inward_issue"`
+	OutwardIssue string `json:"outward_issue"`
+	LinkType     string `json:"link_type"`
+}
+
+// LinkIssues handles POST /jira/issues/links.
+// Write-guarded by WriteGuardMiddleware (X-Enable-Write: true required).
+func (h *JiraHandler) LinkIssues(w http.ResponseWriter, r *http.Request) {
+	var body linkIssuesBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		api.RespondError(w, http.StatusBadRequest, "invalid request body: "+err.Error(), api.ErrCodeBadRequest)
+		return
+	}
+	if body.InwardIssue == "" || body.OutwardIssue == "" || body.LinkType == "" {
+		api.RespondError(w, http.StatusBadRequest, "inward_issue, outward_issue and link_type are required", api.ErrCodeBadRequest)
+		return
+	}
+
+	err := h.svc.LinkIssues(r.Context(), body.InwardIssue, body.OutwardIssue, body.LinkType)
+	h.auditLog.Log(audit.NewEntry("link_issues", "jira", map[string]any{"inward": body.InwardIssue, "outward": body.OutwardIssue, "link_type": body.LinkType}, err))
+	if err != nil {
+		status, code := api.ErrToStatus(err)
+		api.RespondError(w, status, err.Error(), code)
+		return
+	}
+	api.RespondJSON(w, http.StatusCreated, map[string]string{"status": "linked"})
+}
+
+// GetIssueLinkTypes handles GET /jira/issues/link-types.
+func (h *JiraHandler) GetIssueLinkTypes(w http.ResponseWriter, r *http.Request) {
+	linkTypes, err := h.svc.GetIssueLinkTypes(r.Context())
+	if err != nil {
+		status, code := api.ErrToStatus(err)
+		api.RespondError(w, status, err.Error(), code)
+		return
+	}
+	api.RespondJSON(w, http.StatusOK, linkTypes)
+}
+
+// addWorklogBody is the JSON request body for AddWorklog.
+type addWorklogBody struct {
+	TimeSpent string `json:"time_spent"`
+	Comment   string `json:"comment"`
+	Started   string `json:"started"`
+}
+
+// AddWorklog handles POST /jira/issues/{key}/worklogs.
+// Write-guarded by WriteGuardMiddleware (X-Enable-Write: true required).
+func (h *JiraHandler) AddWorklog(w http.ResponseWriter, r *http.Request) {
+	key := r.PathValue("key")
+
+	var body addWorklogBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		api.RespondError(w, http.StatusBadRequest, "invalid request body: "+err.Error(), api.ErrCodeBadRequest)
+		return
+	}
+	if body.TimeSpent == "" {
+		api.RespondError(w, http.StatusBadRequest, "time_spent is required", api.ErrCodeBadRequest)
+		return
+	}
+
+	req := jira.AddWorklogRequest{
+		TimeSpent: body.TimeSpent,
+		Comment:   body.Comment,
+		Started:   body.Started,
+	}
+
+	worklog, err := h.svc.AddWorklog(r.Context(), key, req)
+	h.auditLog.Log(audit.NewEntry("add_worklog", "jira", map[string]any{"key": key, "time_spent": body.TimeSpent}, err))
+	if err != nil {
+		status, code := api.ErrToStatus(err)
+		api.RespondError(w, status, err.Error(), code)
+		return
+	}
+	api.RespondJSON(w, http.StatusCreated, worklog)
+}
+
+// GetIssueTypeMetadata handles GET /jira/projects/{key}/issue-types.
+func (h *JiraHandler) GetIssueTypeMetadata(w http.ResponseWriter, r *http.Request) {
+	key := r.PathValue("key")
+	issueTypes, err := h.svc.GetIssueTypeMetadata(r.Context(), key)
+	if err != nil {
+		status, code := api.ErrToStatus(err)
+		api.RespondError(w, status, err.Error(), code)
+		return
+	}
+	api.RespondJSON(w, http.StatusOK, issueTypes)
 }

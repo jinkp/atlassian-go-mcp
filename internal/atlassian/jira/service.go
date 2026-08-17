@@ -25,6 +25,14 @@ type Service interface {
 	UpdateIssue(ctx context.Context, key string, req UpdateIssueRequest) error
 	GetTransitions(ctx context.Context, key string) ([]Transition, error)
 	TransitionIssue(ctx context.Context, key string, transitionID string) error
+	// Phase 2 expansion — 7 new methods (4 read, 3 write):
+	LookupAccountID(ctx context.Context, query string, maxResults int) ([]User, error)
+	AddComment(ctx context.Context, key string, body string) (*Comment, error)
+	GetComments(ctx context.Context, key string, maxResults int) ([]Comment, error)
+	LinkIssues(ctx context.Context, inward, outward, linkTypeName string) error
+	GetIssueLinkTypes(ctx context.Context) ([]IssueLinkType, error)
+	AddWorklog(ctx context.Context, key string, req AddWorklogRequest) (*Worklog, error)
+	GetIssueTypeMetadata(ctx context.Context, projectKey string) ([]IssueTypeMeta, error)
 }
 
 // JiraService implements Service against the Jira REST API v3.
@@ -293,6 +301,361 @@ func (s *JiraService) TransitionIssue(ctx context.Context, key string, transitio
 		respBody, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("jira: unexpected status %d: %s", resp.StatusCode, string(respBody))
 	}
+}
+
+// --- Phase 2 expansion: 7 new service methods ---
+
+const defaultAccountLookupMaxResults = 10
+
+// LookupAccountID searches for Jira users by name or email.
+// maxResults defaults to 10 when <= 0 to minimise token footprint in MCP contexts.
+// Returns ErrUnauthorized on 401/403, ErrRateLimit on 429.
+func (s *JiraService) LookupAccountID(ctx context.Context, query string, maxResults int) ([]User, error) {
+	if maxResults <= 0 {
+		maxResults = defaultAccountLookupMaxResults
+	}
+
+	params := url.Values{}
+	params.Set("query", query)
+	params.Set("maxResults", strconv.Itoa(maxResults))
+	endpoint := s.baseURL + "/rest/api/3/user/search?" + params.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("jira: building request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := s.doer.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("jira: request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		// success — fall through to decode
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return nil, ErrUnauthorized
+	case http.StatusTooManyRequests:
+		return nil, ErrRateLimit
+	default:
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("jira: unexpected status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var raw []userItemJSON
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("jira: decoding user search response: %w", err)
+	}
+
+	users := make([]User, len(raw))
+	for i, u := range raw {
+		users[i] = u.ToUser()
+	}
+	return users, nil
+}
+
+// AddComment posts a new comment on a Jira issue.
+// body is plain text and is converted to ADF via plainTextToADF before sending.
+// Returns ErrNotFound on 404, ErrUnauthorized on 401/403, ErrRateLimit on 429.
+func (s *JiraService) AddComment(ctx context.Context, key string, body string) (*Comment, error) {
+	endpoint := s.baseURL + "/rest/api/3/issue/" + url.PathEscape(key) + "/comment"
+
+	apiBody := map[string]interface{}{
+		"body": plainTextToADF(body),
+	}
+	encoded, err := json.Marshal(apiBody)
+	if err != nil {
+		return nil, fmt.Errorf("jira: marshaling comment request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(encoded))
+	if err != nil {
+		return nil, fmt.Errorf("jira: building request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := s.doer.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("jira: request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusCreated:
+		// success — fall through to decode
+	case http.StatusNotFound:
+		return nil, ErrNotFound
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return nil, ErrUnauthorized
+	case http.StatusTooManyRequests:
+		return nil, ErrRateLimit
+	case http.StatusBadRequest:
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("jira: add comment 400: %s", string(respBody))
+	default:
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("jira: unexpected status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var raw commentItemJSON
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("jira: decoding comment response: %w", err)
+	}
+
+	comment := raw.ToComment()
+	return &comment, nil
+}
+
+// GetComments retrieves comments for a Jira issue.
+// maxResults defaults to defaultMaxResults (50) when <= 0.
+// Returns an empty (non-nil) slice when the issue has no comments.
+// Returns ErrNotFound on 404, ErrUnauthorized on 401/403, ErrRateLimit on 429.
+func (s *JiraService) GetComments(ctx context.Context, key string, maxResults int) ([]Comment, error) {
+	if maxResults <= 0 {
+		maxResults = defaultMaxResults
+	}
+
+	params := url.Values{}
+	params.Set("maxResults", strconv.Itoa(maxResults))
+	endpoint := s.baseURL + "/rest/api/3/issue/" + url.PathEscape(key) + "/comment?" + params.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("jira: building request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := s.doer.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("jira: request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		// success — fall through to decode
+	case http.StatusNotFound:
+		return nil, ErrNotFound
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return nil, ErrUnauthorized
+	case http.StatusTooManyRequests:
+		return nil, ErrRateLimit
+	default:
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("jira: unexpected status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var raw commentsAPIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("jira: decoding comments response: %w", err)
+	}
+
+	comments := make([]Comment, len(raw.Comments))
+	for i, c := range raw.Comments {
+		comments[i] = c.ToComment()
+	}
+	return comments, nil
+}
+
+// LinkIssues creates a directed link between two Jira issues.
+// linkTypeName must match a name in GET /rest/api/3/issueLinkType (e.g. "Blocks").
+// Returns ErrNotFound on 404, ErrUnauthorized on 401/403, ErrRateLimit on 429.
+func (s *JiraService) LinkIssues(ctx context.Context, inward, outward, linkTypeName string) error {
+	endpoint := s.baseURL + "/rest/api/3/issueLink"
+
+	apiBody := map[string]interface{}{
+		"type":         map[string]string{"name": linkTypeName},
+		"inwardIssue":  map[string]string{"key": inward},
+		"outwardIssue": map[string]string{"key": outward},
+	}
+	encoded, err := json.Marshal(apiBody)
+	if err != nil {
+		return fmt.Errorf("jira: marshaling link request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(encoded))
+	if err != nil {
+		return fmt.Errorf("jira: building request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.doer.Do(req)
+	if err != nil {
+		return fmt.Errorf("jira: request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusCreated:
+		return nil
+	case http.StatusNotFound:
+		return ErrNotFound
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return ErrUnauthorized
+	case http.StatusTooManyRequests:
+		return ErrRateLimit
+	case http.StatusBadRequest:
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("jira: link issues 400: %s", string(respBody))
+	default:
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("jira: unexpected status %d: %s", resp.StatusCode, string(respBody))
+	}
+}
+
+// GetIssueLinkTypes returns all available issue link types for this Jira instance.
+// Returns ErrUnauthorized on 401/403, ErrRateLimit on 429.
+func (s *JiraService) GetIssueLinkTypes(ctx context.Context) ([]IssueLinkType, error) {
+	endpoint := s.baseURL + "/rest/api/3/issueLinkType"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("jira: building request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := s.doer.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("jira: request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		// success — fall through to decode
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return nil, ErrUnauthorized
+	case http.StatusTooManyRequests:
+		return nil, ErrRateLimit
+	default:
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("jira: unexpected status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var raw issueLinkTypesAPIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("jira: decoding link types response: %w", err)
+	}
+
+	linkTypes := make([]IssueLinkType, len(raw.IssueLinkTypes))
+	for i, lt := range raw.IssueLinkTypes {
+		linkTypes[i] = lt.ToIssueLinkType()
+	}
+	return linkTypes, nil
+}
+
+// AddWorklog logs time spent on a Jira issue.
+// req.TimeSpent is forwarded as-is; req.Comment (if non-empty) is converted to ADF;
+// req.Started (if non-empty) is forwarded as-is.
+// Returns ErrNotFound on 404, ErrUnauthorized on 401/403, ErrRateLimit on 429.
+func (s *JiraService) AddWorklog(ctx context.Context, key string, req AddWorklogRequest) (*Worklog, error) {
+	endpoint := s.baseURL + "/rest/api/3/issue/" + url.PathEscape(key) + "/worklog"
+
+	apiBody := map[string]interface{}{
+		"timeSpent": req.TimeSpent,
+	}
+	if req.Comment != "" {
+		apiBody["comment"] = plainTextToADF(req.Comment)
+	}
+	if req.Started != "" {
+		apiBody["started"] = req.Started
+	}
+
+	encoded, err := json.Marshal(apiBody)
+	if err != nil {
+		return nil, fmt.Errorf("jira: marshaling worklog request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(encoded))
+	if err != nil {
+		return nil, fmt.Errorf("jira: building request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "application/json")
+
+	resp, err := s.doer.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("jira: request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusCreated:
+		// success — fall through to decode
+	case http.StatusNotFound:
+		return nil, ErrNotFound
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return nil, ErrUnauthorized
+	case http.StatusTooManyRequests:
+		return nil, ErrRateLimit
+	case http.StatusBadRequest:
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("jira: add worklog 400: %s", string(respBody))
+	default:
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("jira: unexpected status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var raw worklogItemJSON
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("jira: decoding worklog response: %w", err)
+	}
+
+	wl := raw.ToWorklog()
+	return &wl, nil
+}
+
+// GetIssueTypeMetadata returns the available issue types for a Jira project.
+// Handles both Jira Cloud response ("values" key) and Server/DC ("issueTypes" key).
+// Returns ErrNotFound on 404, ErrUnauthorized on 401/403, ErrRateLimit on 429.
+func (s *JiraService) GetIssueTypeMetadata(ctx context.Context, projectKey string) ([]IssueTypeMeta, error) {
+	endpoint := s.baseURL + "/rest/api/3/issue/createmeta/" + url.PathEscape(projectKey) + "/issuetypes"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("jira: building request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := s.doer.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("jira: request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		// success — fall through to decode
+	case http.StatusNotFound:
+		return nil, ErrNotFound
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return nil, ErrUnauthorized
+	case http.StatusTooManyRequests:
+		return nil, ErrRateLimit
+	default:
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("jira: unexpected status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var raw issueTypeMetaAPIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("jira: decoding issue type metadata response: %w", err)
+	}
+
+	// Cloud returns "values"; Server/DC returns "issueTypes" — try "values" first.
+	items := raw.Values
+	if len(items) == 0 {
+		items = raw.IssueTypes
+	}
+
+	issueTypes := make([]IssueTypeMeta, len(items))
+	for i, it := range items {
+		issueTypes[i] = it.ToIssueTypeMeta()
+	}
+	return issueTypes, nil
 }
 
 // SearchIssues searches issues using JQL.

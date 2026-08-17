@@ -182,11 +182,11 @@ func TestEnabledToolCount(t *testing.T) {
 		input string
 		want  int
 	}{
-		{"F3.1 all → 60", "all", 60},
-		{"F3.2 empty → 60", "", 60},
-		{"F3.3 jira → 7", "jira", 7},
-		{"F3.4 jira-read → 4", "jira-read", 4},
-		{"F3.5 jira-write → 3", "jira-write", 3},
+		{"F3.1 all → 67", "all", 67},
+		{"F3.2 empty → 67", "", 67},
+		{"F3.3 jira → 14", "jira", 14},
+		{"F3.4 jira-read → 8", "jira-read", 8},
+		{"F3.5 jira-write → 6", "jira-write", 6},
 		{"F3.6 agile → 8", "agile", 8},
 		{"F3.7 goals → 6", "goals", 6},
 		{"F3.8 metrics → 4", "metrics", 4},
@@ -198,7 +198,7 @@ func TestEnabledToolCount(t *testing.T) {
 		{"F3.16 bitbucket-read → 12", "bitbucket-read", 12},
 		{"F3.17 bitbucket-write → 9", "bitbucket-write", 9},
 		{"F3.13 unknown → 0", "unknown", 0},
-		{"F3.14 jira,agile → 15", "jira,agile", 15},
+		{"F3.14 jira,agile → 22", "jira,agile", 22},
 	}
 
 	for _, tc := range tests {
@@ -296,18 +296,19 @@ func TestDiagnostics(t *testing.T) {
 }
 
 // TestTotalToolCount validates the exported total.
+// Updated: jira expanded from {4,3} to {8,6} → total is now 67.
 func TestTotalToolCount(t *testing.T) {
 	got := TotalToolCount()
-	if got != 60 {
-		t.Errorf("TotalToolCount(): got %d, want 60", got)
+	if got != 67 {
+		t.Errorf("TotalToolCount(): got %d, want 67", got)
 	}
 }
 
 // TestParse_Triangulate: accumulated access levels
 func TestParse_Triangulate(t *testing.T) {
 	fs := Parse("jira-read,jira-write")
-	if got := fs.EnabledToolCount(); got != 7 {
-		t.Errorf("jira-read,jira-write EnabledToolCount: got %d, want 7", got)
+	if got := fs.EnabledToolCount(); got != 14 {
+		t.Errorf("jira-read,jira-write EnabledToolCount: got %d, want 14", got)
 	}
 	if !fs.IsEnabled("jira", false) {
 		t.Error("jira-read,jira-write: read should be enabled")

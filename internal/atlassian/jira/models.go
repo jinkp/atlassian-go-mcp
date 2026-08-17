@@ -60,19 +60,19 @@ type SearchOptions struct {
 
 // IssueAPIResponse maps the raw JSON from GET /rest/api/3/issue/{key}.
 type IssueAPIResponse struct {
-	Key    string           `json:"key"`
-	Fields issueFieldsJSON  `json:"fields"`
+	Key    string          `json:"key"`
+	Fields issueFieldsJSON `json:"fields"`
 }
 
 type issueFieldsJSON struct {
-	Summary   string          `json:"summary"`
-	Status    statusJSON      `json:"status"`
-	IssueType issueTypeJSON   `json:"issuetype"`
-	Assignee  *assigneeJSON   `json:"assignee"`
-	Priority  priorityJSON    `json:"priority"`
-	Labels    []string        `json:"labels"`
-	Created   string          `json:"created"`
-	Updated   string          `json:"updated"`
+	Summary   string        `json:"summary"`
+	Status    statusJSON    `json:"status"`
+	IssueType issueTypeJSON `json:"issuetype"`
+	Assignee  *assigneeJSON `json:"assignee"`
+	Priority  priorityJSON  `json:"priority"`
+	Labels    []string      `json:"labels"`
+	Created   string        `json:"created"`
+	Updated   string        `json:"updated"`
 }
 
 type statusJSON struct {
@@ -145,6 +145,221 @@ func (r SearchAPIResponse) ToSearchResult() SearchResult {
 	}
 }
 
+// --- Phase 2 (expand): New domain types ---
+
+// User represents a Jira user account returned by the user search API.
+type User struct {
+	AccountID   string
+	DisplayName string
+	Email       string
+	Active      bool
+}
+
+// Comment represents a single comment on a Jira issue.
+// Body is plain text extracted from the ADF response via adfToPlainText.
+type Comment struct {
+	ID      string
+	Author  string
+	Body    string
+	Created time.Time
+	Updated time.Time
+}
+
+// IssueLinkType describes a kind of link between two Jira issues (e.g. "Blocks").
+type IssueLinkType struct {
+	ID      string
+	Name    string
+	Inward  string
+	Outward string
+}
+
+// AddWorklogRequest holds the parameters for logging time on an issue.
+// TimeSpent is forwarded as-is (Jira parses "3h 30m", "2h", "30m" natively).
+// Comment and Started are optional; empty strings are omitted from the request.
+type AddWorklogRequest struct {
+	TimeSpent string // required; e.g. "3h 30m"
+	Comment   string // optional plain text → ADF
+	Started   string // optional ISO 8601; forwarded as-is
+}
+
+// Worklog represents a single worklog entry on a Jira issue.
+type Worklog struct {
+	ID               string
+	TimeSpentSeconds int
+	Started          time.Time
+	Author           string
+}
+
+// IssueTypeMeta describes an issue type available for a project (from createmeta).
+type IssueTypeMeta struct {
+	ID      string
+	Name    string
+	Desc    string
+	Subtask bool
+}
+
+// --- Raw API response wrappers for Phase 2 types ---
+
+// userSearchResponse is the JSON array response from GET /rest/api/3/user/search.
+// The Jira API returns a flat JSON array, so we decode into a slice directly.
+type userItemJSON struct {
+	AccountID    string `json:"accountId"`
+	DisplayName  string `json:"displayName"`
+	EmailAddress string `json:"emailAddress"`
+	Active       bool   `json:"active"`
+}
+
+// ToUser converts a raw user API item to the domain User model.
+func (u userItemJSON) ToUser() User {
+	return User{
+		AccountID:   u.AccountID,
+		DisplayName: u.DisplayName,
+		Email:       u.EmailAddress,
+		Active:      u.Active,
+	}
+}
+
+// commentAPIResponse maps a single comment from GET /rest/api/3/issue/{key}/comment.
+type commentItemJSON struct {
+	ID      string                 `json:"id"`
+	Author  authorJSON             `json:"author"`
+	Body    map[string]interface{} `json:"body"` // ADF document
+	Created string                 `json:"created"`
+	Updated string                 `json:"updated"`
+}
+
+type authorJSON struct {
+	DisplayName string `json:"displayName"`
+}
+
+// ToComment converts a raw comment API item to the domain Comment model.
+// The ADF body is converted to plain text via adfToPlainText.
+func (c commentItemJSON) ToComment() Comment {
+	comment := Comment{
+		ID:     c.ID,
+		Author: c.Author.DisplayName,
+		Body:   adfToPlainText(c.Body),
+	}
+	if t, err := time.Parse(jiraTimeLayout, c.Created); err == nil {
+		comment.Created = t.UTC()
+	}
+	if t, err := time.Parse(jiraTimeLayout, c.Updated); err == nil {
+		comment.Updated = t.UTC()
+	}
+	return comment
+}
+
+// commentsAPIResponse maps the JSON from GET /rest/api/3/issue/{key}/comment.
+type commentsAPIResponse struct {
+	Comments []commentItemJSON `json:"comments"`
+}
+
+// issueLinkTypeItemJSON maps a single link type from GET /rest/api/3/issueLinkType.
+type issueLinkTypeItemJSON struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Inward  string `json:"inward"`
+	Outward string `json:"outward"`
+}
+
+// ToIssueLinkType converts a raw link type API item to the domain model.
+func (l issueLinkTypeItemJSON) ToIssueLinkType() IssueLinkType {
+	return IssueLinkType{
+		ID:      l.ID,
+		Name:    l.Name,
+		Inward:  l.Inward,
+		Outward: l.Outward,
+	}
+}
+
+// issueLinkTypesAPIResponse maps the JSON from GET /rest/api/3/issueLinkType.
+type issueLinkTypesAPIResponse struct {
+	IssueLinkTypes []issueLinkTypeItemJSON `json:"issueLinkTypes"`
+}
+
+// worklogItemJSON maps the worklog JSON returned by POST /rest/api/3/issue/{key}/worklog.
+type worklogItemJSON struct {
+	ID               string     `json:"id"`
+	TimeSpentSeconds int        `json:"timeSpentSeconds"`
+	Started          string     `json:"started"`
+	Author           authorJSON `json:"author"`
+}
+
+// ToWorklog converts a raw worklog API item to the domain Worklog model.
+func (w worklogItemJSON) ToWorklog() Worklog {
+	wl := Worklog{
+		ID:               w.ID,
+		TimeSpentSeconds: w.TimeSpentSeconds,
+		Author:           w.Author.DisplayName,
+	}
+	if t, err := time.Parse(jiraTimeLayout, w.Started); err == nil {
+		wl.Started = t.UTC()
+	}
+	return wl
+}
+
+// issueTypeMetaItemJSON maps a single issue type from the createmeta response.
+type issueTypeMetaItemJSON struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Subtask     bool   `json:"subtask"`
+}
+
+// ToIssueTypeMeta converts a raw issue type meta item to the domain model.
+func (m issueTypeMetaItemJSON) ToIssueTypeMeta() IssueTypeMeta {
+	return IssueTypeMeta{
+		ID:      m.ID,
+		Name:    m.Name,
+		Desc:    m.Description,
+		Subtask: m.Subtask,
+	}
+}
+
+// issueTypeMetaAPIResponse decodes both Jira Cloud ("values") and Server/DC
+// ("issueTypes") shapes from GET /rest/api/3/issue/createmeta/{key}/issuetypes.
+type issueTypeMetaAPIResponse struct {
+	Values     []issueTypeMetaItemJSON `json:"values"`
+	IssueTypes []issueTypeMetaItemJSON `json:"issueTypes"`
+}
+
+// adfToPlainText walks an ADF (Atlassian Document Format) JSON document and
+// concatenates all "text" node values found in nested "content" arrays.
+// Returns "" on nil or malformed input — never panics.
+func adfToPlainText(adf map[string]interface{}) string {
+	if adf == nil {
+		return ""
+	}
+	return extractADFText(adf)
+}
+
+// extractADFText is the recursive helper used by adfToPlainText.
+func extractADFText(node map[string]interface{}) string {
+	if node == nil {
+		return ""
+	}
+	result := ""
+	// If this node is a "text" node, capture its text value.
+	if nodeType, ok := node["type"].(string); ok && nodeType == "text" {
+		if text, ok := node["text"].(string); ok {
+			result += text
+		}
+	}
+	// Recurse into "content" array regardless of node type.
+	content, ok := node["content"].([]interface{})
+	if !ok {
+		return result
+	}
+	for _, child := range content {
+		childMap, ok := child.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		result += extractADFText(childMap)
+	}
+	return result
+}
+
 // --- Phase 3: Write operation domain types ---
 
 // CreateIssueRequest contains the parameters for creating a new Jira issue.
@@ -211,7 +426,7 @@ type createIssueAPIRequest struct {
 }
 
 type createIssueFields struct {
-	Project     struct {
+	Project struct {
 		Key string `json:"key"`
 	} `json:"project"`
 	IssueType struct {

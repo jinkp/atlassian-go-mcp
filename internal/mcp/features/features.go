@@ -34,8 +34,11 @@ var allModules = []string{
 }
 
 // moduleToolCounts maps module → [readCount, writeCount].
-// jira:     get_jira_issue, search_jira_issues, get_jira_transitions, get_jira_epics (4 read)
-//           create_jira_issue, update_jira_issue, transition_jira_issue (3 write)
+// jira:     get_jira_issue, search_jira_issues, get_jira_transitions, get_jira_epics,
+//           lookup_jira_account_id, get_issue_comments, get_issue_link_types,
+//           get_issue_type_metadata (8 read)
+//           create_jira_issue, update_jira_issue, transition_jira_issue,
+//           add_comment_to_issue, link_issues, add_worklog (6 write)
 // agile:    get_jira_boards, get_jira_sprints, get_active_sprint, get_sprint_issues (4 read)
 //           create_sprint, update_sprint, move_issues_to_sprint, move_issues_to_epic (4 write)
 // goals:    get_site_id, get_goal, search_goals (3 read)
@@ -55,7 +58,7 @@ var allModules = []string{
 //           bb_create_pr, bb_comment_pr, bb_update_pr, bb_approve_pr, bb_decline_pr,
 //           bb_merge_pr, bb_run_pipeline, bb_create_pr_task, bb_resolve_pr_task (9 write)
 var moduleToolCounts = map[string][2]int{
-	ModuleJira:      {4, 3},
+	ModuleJira:      {8, 6},
 	ModuleAgile:     {4, 4},
 	ModuleGoals:     {3, 3},
 	ModuleMetrics:   {1, 3},
@@ -147,7 +150,7 @@ func (f *FeatureSet) IsEnabled(module string, write bool) bool {
 }
 
 // EnabledToolCount returns the total number of tools that would be registered
-// given this FeatureSet. A nil receiver returns the total tool count (60).
+// given this FeatureSet. A nil receiver returns the total tool count (67).
 func (f *FeatureSet) EnabledToolCount() int {
 	if f == nil {
 		return TotalToolCount()
@@ -168,7 +171,7 @@ func (f *FeatureSet) EnabledToolCount() int {
 	return count
 }
 
-// TotalToolCount returns the total number of tools across all modules (currently 60).
+// TotalToolCount returns the total number of tools across all modules (currently 67).
 func TotalToolCount() int {
 	n := 0
 	for _, c := range moduleToolCounts {

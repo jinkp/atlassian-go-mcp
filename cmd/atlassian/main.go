@@ -113,12 +113,7 @@ func buildRootCmd() *cobra.Command {
 
 	// Jira subgroup
 	jiraRoot := jira.NewJiraCmd()
-	jiraRoot.AddCommand(jira.NewGetCmd(svc))
-	jiraRoot.AddCommand(jira.NewSearchCmd(svc))
-	jiraRoot.AddCommand(jira.NewCreateCmd(svc, auditLog, dryRun))
-	jiraRoot.AddCommand(jira.NewUpdateCmd(svc, auditLog, dryRun))
-	jiraRoot.AddCommand(jira.NewTransitionsCmd(svc))
-	jiraRoot.AddCommand(jira.NewTransitionCmd(svc, auditLog, dryRun))
+	jira.RegisterCommands(jiraRoot, svc, auditLog, dryRun)
 	root.AddCommand(jiraRoot)
 
 	// Agile subgroup
@@ -247,6 +242,27 @@ func (n *nilService) GetTransitions(_ context.Context, _ string) ([]jirasvc.Tran
 }
 func (n *nilService) TransitionIssue(_ context.Context, _ string, _ string) error {
 	return fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilService) LookupAccountID(_ context.Context, _ string, _ int) ([]jirasvc.User, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilService) AddComment(_ context.Context, _ string, _ string) (*jirasvc.Comment, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilService) GetComments(_ context.Context, _ string, _ int) ([]jirasvc.Comment, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilService) LinkIssues(_ context.Context, _, _, _ string) error {
+	return fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilService) GetIssueLinkTypes(_ context.Context) ([]jirasvc.IssueLinkType, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilService) AddWorklog(_ context.Context, _ string, _ jirasvc.AddWorklogRequest) (*jirasvc.Worklog, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilService) GetIssueTypeMetadata(_ context.Context, _ string) ([]jirasvc.IssueTypeMeta, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
 }
 
 // --- nilAgileService: no-op Agile service for --help without credentials ---
