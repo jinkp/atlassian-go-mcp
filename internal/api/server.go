@@ -7,6 +7,7 @@ import (
 	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/agile"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/bitbucket"
+	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/confluence"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/goals"
 	jira "github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/projects"
@@ -16,16 +17,17 @@ import (
 
 // Server holds all service dependencies and configuration for the REST API server.
 type Server struct {
-	jiraSvc      jira.Service
-	agileSvc     agile.AgileService
-	goalsSvc     goals.GoalsService
-	releasesSvc  releases.ReleasesService
-	projectsSvc  projects.ProjectsService
-	teamsSvc     teams.TeamsService
-	bitbucketSvc bitbucket.BitbucketService
-	auditLog     audit.Logger
-	readOnly     bool
-	port         int
+	jiraSvc       jira.Service
+	agileSvc      agile.AgileService
+	goalsSvc      goals.GoalsService
+	releasesSvc   releases.ReleasesService
+	projectsSvc   projects.ProjectsService
+	teamsSvc      teams.TeamsService
+	bitbucketSvc  bitbucket.BitbucketService
+	confluenceSvc confluence.Service
+	auditLog      audit.Logger
+	readOnly      bool
+	port          int
 }
 
 // NewServer constructs a Server with the provided services and configuration.
@@ -39,21 +41,23 @@ func NewServer(
 	projectsSvc projects.ProjectsService,
 	teamsSvc teams.TeamsService,
 	bitbucketSvc bitbucket.BitbucketService,
+	confluenceSvc confluence.Service,
 	auditLog audit.Logger,
 	readOnly bool,
 	port int,
 ) *Server {
 	return &Server{
-		jiraSvc:      jiraSvc,
-		agileSvc:     agileSvc,
-		goalsSvc:     goalsSvc,
-		releasesSvc:  releasesSvc,
-		projectsSvc:  projectsSvc,
-		teamsSvc:     teamsSvc,
-		bitbucketSvc: bitbucketSvc,
-		auditLog:     auditLog,
-		readOnly:     readOnly,
-		port:         port,
+		jiraSvc:       jiraSvc,
+		agileSvc:      agileSvc,
+		goalsSvc:      goalsSvc,
+		releasesSvc:   releasesSvc,
+		projectsSvc:   projectsSvc,
+		teamsSvc:      teamsSvc,
+		bitbucketSvc:  bitbucketSvc,
+		confluenceSvc: confluenceSvc,
+		auditLog:      auditLog,
+		readOnly:      readOnly,
+		port:          port,
 	}
 }
 
@@ -77,6 +81,9 @@ func (s *Server) TeamsSvc() teams.TeamsService { return s.teamsSvc }
 
 // BitbucketSvc returns the Bitbucket service — used by cmd/api to wire handlers.
 func (s *Server) BitbucketSvc() bitbucket.BitbucketService { return s.bitbucketSvc }
+
+// ConfluenceSvc returns the Confluence service — used by cmd/api to wire handlers.
+func (s *Server) ConfluenceSvc() confluence.Service { return s.confluenceSvc }
 
 // AuditLog returns the audit logger — used by cmd/api to wire handlers.
 func (s *Server) AuditLog() audit.Logger { return s.auditLog }

@@ -13,6 +13,7 @@ import (
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/agile"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/bitbucket"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/client"
+	confluence "github.com/jinkp/atlassian-go-mcp/internal/atlassian/confluence"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/goals"
 	jira "github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/projects"
@@ -81,9 +82,9 @@ func LogStartupDiagnostics(w io.Writer, fs *features.FeatureSet) {
 }
 
 // NewAtlassianServer creates a configured MCPServer with Atlassian tools registered
-// according to the provided FeatureSet. A nil FeatureSet enables all 67 tools (backward compat).
+// according to the provided FeatureSet. A nil FeatureSet enables all 79 tools (backward compat).
 // log receives an entry for every write operation (after WriteGuardCheck passes).
-func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc goals.GoalsService, releasesSvc releases.ReleasesService, projectsSvc projects.ProjectsService, teamsSvc teams.TeamsService, bitbucketSvc bitbucket.BitbucketService, log audit.Logger, fs *features.FeatureSet) *server.MCPServer {
+func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc goals.GoalsService, releasesSvc releases.ReleasesService, projectsSvc projects.ProjectsService, teamsSvc teams.TeamsService, bitbucketSvc bitbucket.BitbucketService, confluenceSvc confluence.Service, log audit.Logger, fs *features.FeatureSet) *server.MCPServer {
 	s := server.NewMCPServer(
 		"atlassian-mcp",
 		serverVersion,
@@ -1251,15 +1252,300 @@ func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc 
 		)
 	}
 
+	// --- CONFLUENCE READ (8 tools incl. search) ---
+	if fs.IsEnabled(features.ModuleConfluence, false) {
+		s.AddTool(
+			mcp.NewTool(
+				"get_confluence_page",
+				mcp.WithDescription("Get a Confluence page by ID"),
+				mcp.WithString(
+					"page_id",
+					mcp.Required(),
+					mcp.Description("The Confluence page ID"),
+				),
+				mcp.WithString(
+					"body_format",
+					mcp.Description("Body format to return (default 'storage' = XHTML)"),
+				),
+			),
+			ToolGetConfluencePage(confluenceSvc),
+		)
+
+		s.AddTool(
+			mcp.NewTool(
+				"get_pages_in_space",
+				mcp.WithDescription("List pages in a Confluence space"),
+				mcp.WithString(
+					"space_id",
+					mcp.Required(),
+					mcp.Description("The Confluence space ID"),
+				),
+				mcp.WithNumber(
+					"limit",
+					mcp.Description("Maximum number of pages to return"),
+				),
+				mcp.WithString(
+					"cursor",
+					mcp.Description("Pagination cursor from a previous response"),
+				),
+			),
+			ToolGetPagesInSpace(confluenceSvc),
+		)
+
+		s.AddTool(
+			mcp.NewTool(
+				"get_confluence_spaces",
+				mcp.WithDescription("List Confluence spaces"),
+				mcp.WithNumber(
+					"limit",
+					mcp.Description("Maximum number of spaces to return"),
+				),
+				mcp.WithString(
+					"cursor",
+					mcp.Description("Pagination cursor from a previous response"),
+				),
+				mcp.WithString(
+					"keys",
+					mcp.Description("Comma-separated space keys to filter by (optional)"),
+				),
+				mcp.WithString(
+					"type",
+					mcp.Description("Space type filter, e.g. 'global' or 'personal' (optional)"),
+				),
+			),
+			ToolGetConfluenceSpaces(confluenceSvc),
+		)
+
+		s.AddTool(
+			mcp.NewTool(
+				"get_page_descendants",
+				mcp.WithDescription("List descendant pages of a Confluence page"),
+				mcp.WithString(
+					"page_id",
+					mcp.Required(),
+					mcp.Description("The Confluence page ID"),
+				),
+				mcp.WithNumber(
+					"limit",
+					mcp.Description("Maximum number of descendants to return"),
+				),
+				mcp.WithString(
+					"cursor",
+					mcp.Description("Pagination cursor from a previous response"),
+				),
+			),
+			ToolGetPageDescendants(confluenceSvc),
+		)
+
+		s.AddTool(
+			mcp.NewTool(
+				"get_page_footer_comments",
+				mcp.WithDescription("List footer comments on a Confluence page"),
+				mcp.WithString(
+					"page_id",
+					mcp.Required(),
+					mcp.Description("The Confluence page ID"),
+				),
+				mcp.WithNumber(
+					"limit",
+					mcp.Description("Maximum number of comments to return"),
+				),
+				mcp.WithString(
+					"cursor",
+					mcp.Description("Pagination cursor from a previous response"),
+				),
+			),
+			ToolGetPageFooterComments(confluenceSvc),
+		)
+
+		s.AddTool(
+			mcp.NewTool(
+				"get_page_inline_comments",
+				mcp.WithDescription("List inline comments on a Confluence page"),
+				mcp.WithString(
+					"page_id",
+					mcp.Required(),
+					mcp.Description("The Confluence page ID"),
+				),
+				mcp.WithNumber(
+					"limit",
+					mcp.Description("Maximum number of comments to return"),
+				),
+				mcp.WithString(
+					"cursor",
+					mcp.Description("Pagination cursor from a previous response"),
+				),
+			),
+			ToolGetPageInlineComments(confluenceSvc),
+		)
+
+		s.AddTool(
+			mcp.NewTool(
+				"get_comment_children",
+				mcp.WithDescription("List child (reply) comments of a Confluence comment"),
+				mcp.WithString(
+					"comment_id",
+					mcp.Required(),
+					mcp.Description("The Confluence comment ID"),
+				),
+				mcp.WithNumber(
+					"limit",
+					mcp.Description("Maximum number of children to return"),
+				),
+				mcp.WithString(
+					"cursor",
+					mcp.Description("Pagination cursor from a previous response"),
+				),
+			),
+			ToolGetCommentChildren(confluenceSvc),
+		)
+
+		s.AddTool(
+			mcp.NewTool(
+				"search_confluence",
+				mcp.WithDescription("Search Confluence content with CQL (Confluence Query Language)"),
+				mcp.WithString(
+					"cql",
+					mcp.Required(),
+					mcp.Description("CQL query string, e.g. 'type=page AND space=DEV'"),
+				),
+				mcp.WithNumber(
+					"limit",
+					mcp.Description("Maximum number of results to return"),
+				),
+			),
+			ToolSearchConfluence(confluenceSvc),
+		)
+	}
+
+	// --- CONFLUENCE WRITE (4 tools) ---
+	if fs.IsEnabled(features.ModuleConfluence, true) {
+		s.AddTool(
+			mcp.NewTool(
+				"create_confluence_page",
+				mcp.WithDescription("Create a new Confluence page. Requires ENABLE_WRITE=true."),
+				mcp.WithString(
+					"space_id",
+					mcp.Required(),
+					mcp.Description("The Confluence space ID where the page will be created"),
+				),
+				mcp.WithString(
+					"title",
+					mcp.Required(),
+					mcp.Description("Page title"),
+				),
+				mcp.WithString(
+					"body",
+					mcp.Required(),
+					mcp.Description("Page body in Confluence storage format (XHTML)"),
+				),
+				mcp.WithString(
+					"parent_id",
+					mcp.Description("Parent page ID (optional)"),
+				),
+				mcp.WithString(
+					"status",
+					mcp.Description("Page status (optional, default 'current')"),
+				),
+			),
+			ToolCreateConfluencePage(confluenceSvc, log),
+		)
+
+		s.AddTool(
+			mcp.NewTool(
+				"update_confluence_page",
+				mcp.WithDescription("Update an existing Confluence page. Requires ENABLE_WRITE=true."),
+				mcp.WithString(
+					"page_id",
+					mcp.Required(),
+					mcp.Description("The Confluence page ID to update"),
+				),
+				mcp.WithString(
+					"title",
+					mcp.Required(),
+					mcp.Description("New page title"),
+				),
+				mcp.WithString(
+					"body",
+					mcp.Required(),
+					mcp.Description("New page body in Confluence storage format (XHTML)"),
+				),
+				mcp.WithString(
+					"status",
+					mcp.Description("Page status (optional, default 'current')"),
+				),
+				mcp.WithNumber(
+					"version_number",
+					mcp.Description("Page version number (optional — omit to auto-increment from current version)"),
+				),
+			),
+			ToolUpdateConfluencePage(confluenceSvc, log),
+		)
+
+		s.AddTool(
+			mcp.NewTool(
+				"create_footer_comment",
+				mcp.WithDescription("Create a footer comment on a Confluence page. Requires ENABLE_WRITE=true."),
+				mcp.WithString(
+					"page_id",
+					mcp.Required(),
+					mcp.Description("The Confluence page ID"),
+				),
+				mcp.WithString(
+					"body",
+					mcp.Required(),
+					mcp.Description("Comment body in Confluence storage format (XHTML)"),
+				),
+				mcp.WithString(
+					"parent_comment_id",
+					mcp.Description("Parent comment ID for threaded replies (optional)"),
+				),
+			),
+			ToolCreateFooterComment(confluenceSvc, log),
+		)
+
+		s.AddTool(
+			mcp.NewTool(
+				"create_inline_comment",
+				mcp.WithDescription("Create an inline comment anchored to selected text on a Confluence page. Requires ENABLE_WRITE=true."),
+				mcp.WithString(
+					"page_id",
+					mcp.Required(),
+					mcp.Description("The Confluence page ID"),
+				),
+				mcp.WithString(
+					"body",
+					mcp.Required(),
+					mcp.Description("Comment body in Confluence storage format (XHTML)"),
+				),
+				mcp.WithString(
+					"text_selection",
+					mcp.Required(),
+					mcp.Description("The exact text on the page that the comment anchors to (required)"),
+				),
+				mcp.WithNumber(
+					"text_selection_match_count",
+					mcp.Description("Total number of times the selected text appears on the page (optional)"),
+				),
+				mcp.WithNumber(
+					"text_selection_match_index",
+					mcp.Description("Which occurrence of the selected text to anchor to, 0-based (optional)"),
+				),
+			),
+			ToolCreateInlineComment(confluenceSvc, log),
+		)
+	}
+
 	return s
 }
 
 // StartServer wires jira.Service, agile.AgileService, goals.GoalsService, releases.ReleasesService,
-// projects.ProjectsService, teams.TeamsService, an audit.Logger, and a FeatureSet into the MCP server
-// and starts the stdio loop. Blocks until the server exits. Call from cmd/mcp after setting
-// log.SetOutput(os.Stderr) to guarantee stdout discipline.
-// A nil FeatureSet enables all 67 tools.
-func StartServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc goals.GoalsService, releasesSvc releases.ReleasesService, projectsSvc projects.ProjectsService, teamsSvc teams.TeamsService, bitbucketSvc bitbucket.BitbucketService, auditLog audit.Logger, fs *features.FeatureSet) error {
-	s := NewAtlassianServer(svc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, bitbucketSvc, auditLog, fs)
+// projects.ProjectsService, teams.TeamsService, bitbucket.BitbucketService, confluence.Service,
+// an audit.Logger, and a FeatureSet into the MCP server and starts the stdio loop.
+// Blocks until the server exits. Call from cmd/mcp after setting log.SetOutput(os.Stderr)
+// to guarantee stdout discipline.
+// A nil FeatureSet enables all 79 tools.
+func StartServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc goals.GoalsService, releasesSvc releases.ReleasesService, projectsSvc projects.ProjectsService, teamsSvc teams.TeamsService, bitbucketSvc bitbucket.BitbucketService, confluenceSvc confluence.Service, auditLog audit.Logger, fs *features.FeatureSet) error {
+	s := NewAtlassianServer(svc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, bitbucketSvc, confluenceSvc, auditLog, fs)
 	return server.ServeStdio(s)
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/agile"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/bitbucket"
+	confluence "github.com/jinkp/atlassian-go-mcp/internal/atlassian/confluence"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/goals"
 	mcpserver "github.com/jinkp/atlassian-go-mcp/internal/mcp"
 	"github.com/jinkp/atlassian-go-mcp/internal/mcp/features"
@@ -164,7 +165,7 @@ func TestLogStartupDiagnostics(t *testing.T) {
 				"[atlassian-mcp] version:",
 				"[atlassian-mcp] modules: all modules enabled (rw)",
 				"[atlassian-mcp] write guard: enabled (ENABLE_WRITE=true)",
-				"[atlassian-mcp] tools: 67/67 registered",
+				"[atlassian-mcp] tools: 79/79 registered",
 			},
 		},
 		{
@@ -175,7 +176,7 @@ func TestLogStartupDiagnostics(t *testing.T) {
 				"[atlassian-mcp] version:",
 				"[atlassian-mcp] modules: jira(rw)",
 				"[atlassian-mcp] write guard: disabled (ENABLE_WRITE=)",
-				"[atlassian-mcp] tools: 14/67 registered",
+				"[atlassian-mcp] tools: 14/79 registered",
 			},
 		},
 		{
@@ -186,7 +187,7 @@ func TestLogStartupDiagnostics(t *testing.T) {
 				"[atlassian-mcp] version:",
 				"[atlassian-mcp] modules: jira(r)",
 				"[atlassian-mcp] write guard: enabled (ENABLE_WRITE=true)",
-				"[atlassian-mcp] tools: 8/67 registered",
+				"[atlassian-mcp] tools: 8/79 registered",
 			},
 		},
 	}
@@ -426,6 +427,46 @@ func (m *mockServerBitbucketService) RunPipeline(_ context.Context, _, _, _ stri
 	return &bitbucket.Pipeline{}, nil
 }
 
+// mockServerConfluenceService is a minimal confluence.Service for server construction tests.
+type mockServerConfluenceService struct{}
+
+func (m *mockServerConfluenceService) GetPage(_ context.Context, _ string, _ string) (*confluence.Page, error) {
+	return &confluence.Page{}, nil
+}
+func (m *mockServerConfluenceService) GetPagesInSpace(_ context.Context, _ string, _ int, _ string) (*confluence.PageList, error) {
+	return &confluence.PageList{Results: []confluence.Page{}}, nil
+}
+func (m *mockServerConfluenceService) GetSpaces(_ context.Context, _ int, _ string, _ []string, _ string) (*confluence.SpaceList, error) {
+	return &confluence.SpaceList{Results: []confluence.Space{}}, nil
+}
+func (m *mockServerConfluenceService) GetPageDescendants(_ context.Context, _ string, _ int, _ string) (*confluence.PageRefList, error) {
+	return &confluence.PageRefList{Results: []confluence.PageRef{}}, nil
+}
+func (m *mockServerConfluenceService) GetFooterComments(_ context.Context, _ string, _ int, _ string) (*confluence.CommentList, error) {
+	return &confluence.CommentList{Results: []confluence.Comment{}}, nil
+}
+func (m *mockServerConfluenceService) GetInlineComments(_ context.Context, _ string, _ int, _ string) (*confluence.CommentList, error) {
+	return &confluence.CommentList{Results: []confluence.Comment{}}, nil
+}
+func (m *mockServerConfluenceService) GetCommentChildren(_ context.Context, _ string, _ int, _ string) (*confluence.CommentList, error) {
+	return &confluence.CommentList{Results: []confluence.Comment{}}, nil
+}
+func (m *mockServerConfluenceService) CreatePage(_ context.Context, _ confluence.CreatePageRequest) (*confluence.Page, error) {
+	return &confluence.Page{}, nil
+}
+func (m *mockServerConfluenceService) UpdatePage(_ context.Context, _ confluence.UpdatePageRequest) (*confluence.Page, error) {
+	return &confluence.Page{}, nil
+}
+func (m *mockServerConfluenceService) CreateFooterComment(_ context.Context, _ confluence.CreateCommentRequest) (*confluence.Comment, error) {
+	return &confluence.Comment{}, nil
+}
+func (m *mockServerConfluenceService) CreateInlineComment(_ context.Context, _ confluence.CreateInlineCommentRequest) (*confluence.Comment, error) {
+	return &confluence.Comment{}, nil
+}
+func (m *mockServerConfluenceService) SearchContent(_ context.Context, _ string, _ int) ([]confluence.SearchResult, error) {
+	return []confluence.SearchResult{}, nil
+}
+
 // --- TestNewAtlassianServer ---
 
 func TestNewAtlassianServer_HasTools(t *testing.T) {
@@ -439,8 +480,9 @@ func TestNewAtlassianServer_HasTools(t *testing.T) {
 	projectsSvc := &mockServerProjectsService{}
 	teamsSvc := &mockServerTeamsService{}
 	bitbucketSvc := &mockServerBitbucketService{}
-	// nil FeatureSet → all 67 tools registered (backward-compat default)
-	s := mcpserver.NewAtlassianServer(svc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, bitbucketSvc, audit.NewNoopLogger(), nil)
+	confluenceSvc := &mockServerConfluenceService{}
+	// nil FeatureSet → all 79 tools registered (backward-compat default)
+	s := mcpserver.NewAtlassianServer(svc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, bitbucketSvc, confluenceSvc, audit.NewNoopLogger(), nil)
 	if s == nil {
 		t.Fatal("NewAtlassianServer returned nil")
 	}
@@ -459,6 +501,7 @@ func TestNewAtlassianServer_FeatureGating(t *testing.T) {
 	projectsSvc := &mockServerProjectsService{}
 	teamsSvc := &mockServerTeamsService{}
 	bitbucketSvc := &mockServerBitbucketService{}
+	confluenceSvc := &mockServerConfluenceService{}
 	log := audit.NewNoopLogger()
 
 	tests := []struct {
@@ -472,11 +515,13 @@ func TestNewAtlassianServer_FeatureGating(t *testing.T) {
 		{"unknown module → 0 tools", features.Parse("unknown"), false},
 		{"all", features.Parse("all"), false},
 		{"goals,metrics", features.Parse("goals,metrics"), false},
+		{"confluence only", features.Parse("confluence"), false},
+		{"confluence-read only", features.Parse("confluence-read"), false},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			s := mcpserver.NewAtlassianServer(svc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, bitbucketSvc, log, tc.fs)
+			s := mcpserver.NewAtlassianServer(svc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, bitbucketSvc, confluenceSvc, log, tc.fs)
 			if (s == nil) != tc.wantNil {
 				t.Errorf("NewAtlassianServer nil=%v, want nil=%v", s == nil, tc.wantNil)
 			}

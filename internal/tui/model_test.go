@@ -36,25 +36,40 @@ func TestNewModel_InitialState(t *testing.T) {
 		t.Errorf("Cursor: got %d, want 0", m.Cursor())
 	}
 
-	// T1.4 preview = "all"
-	if m.Preview() != "all" {
-		t.Errorf("Preview: got %q, want 'all'", m.Preview())
+	// T1.4 preview = lean list (confluence disabled by default, so not "all")
+	wantPreview := "jira,agile,goals,metrics,releases,projects,teams,bitbucket"
+	if m.Preview() != wantPreview {
+		t.Errorf("Preview: got %q, want %q", m.Preview(), wantPreview)
 	}
 
-	// T1.2 + T1.5 all 8 modules enabled RW in order
-	wantModules := []string{"jira", "agile", "goals", "metrics", "releases", "projects", "teams", "bitbucket"}
+	// T1.2 + T1.5: 9 modules (8 enabled RW + confluence disabled)
+	wantModules := []struct {
+		name    string
+		enabled bool
+	}{
+		{"jira", true},
+		{"agile", true},
+		{"goals", true},
+		{"metrics", true},
+		{"releases", true},
+		{"projects", true},
+		{"teams", true},
+		{"bitbucket", true},
+		{"confluence", false}, // lean default: off
+	}
 	mods := m.Modules()
 	if len(mods) != len(wantModules) {
 		t.Fatalf("Modules len: got %d, want %d", len(mods), len(wantModules))
 	}
-	for i, mod := range mods {
-		if mod.Name != wantModules[i] {
-			t.Errorf("modules[%d].Name: got %q, want %q", i, mod.Name, wantModules[i])
+	for i, want := range wantModules {
+		mod := mods[i]
+		if mod.Name != want.name {
+			t.Errorf("modules[%d].Name: got %q, want %q", i, mod.Name, want.name)
 		}
-		if !mod.Enabled {
-			t.Errorf("modules[%d].Enabled: got false, want true", i)
+		if mod.Enabled != want.enabled {
+			t.Errorf("modules[%d].Enabled: got %v, want %v", i, mod.Enabled, want.enabled)
 		}
-		if mod.Access != tui.AccessReadWrite {
+		if want.enabled && mod.Access != tui.AccessReadWrite {
 			t.Errorf("modules[%d].Access: got %d, want AccessReadWrite", i, mod.Access)
 		}
 	}
@@ -133,19 +148,19 @@ func TestNavigation(t *testing.T) {
 		t.Errorf("T4.3: cursor after down: got %d, want 1", m2.Cursor())
 	}
 
-	// T4.1: down on last → wraps to 0 (8 modules → 8 downs from 0 wraps back)
+	// T4.1: down on last → wraps to 0 (9 modules → 9 downs from 0 wraps back)
 	mLast := m
-	for i := 0; i < 8; i++ {
+	for i := 0; i < 9; i++ {
 		mLast = pressKey(mLast, tea.KeyDown)
 	}
 	if mLast.Cursor() != 0 {
 		t.Errorf("T4.1: cursor should wrap to 0, got %d", mLast.Cursor())
 	}
 
-	// T4.2: up on first → wraps to last (7)
+	// T4.2: up on first → wraps to last (8 = index of confluence)
 	m3 := pressKey(m, tea.KeyUp)
-	if m3.Cursor() != 7 {
-		t.Errorf("T4.2: cursor after up from 0: got %d, want 7", m3.Cursor())
+	if m3.Cursor() != 8 {
+		t.Errorf("T4.2: cursor after up from 0: got %d, want 8", m3.Cursor())
 	}
 
 	// j/k aliases
@@ -154,8 +169,8 @@ func TestNavigation(t *testing.T) {
 		t.Errorf("j: cursor: got %d, want 1", mj.Cursor())
 	}
 	mk := pressRune(m, 'k')
-	if mk.Cursor() != 7 {
-		t.Errorf("k from 0: cursor: got %d, want 7", mk.Cursor())
+	if mk.Cursor() != 8 {
+		t.Errorf("k from 0: cursor: got %d, want 8", mk.Cursor())
 	}
 }
 
@@ -163,27 +178,42 @@ func TestNavigation(t *testing.T) {
 
 func TestToggleAll_A(t *testing.T) {
 	m := tui.NewModel()
+	// Initial state: 8 modules enabled, confluence disabled → allEnabled=false
 
-	// T5.1: a when all enabled → all disabled
+	// T5.1: a when any disabled (confluence) → all enabled RW including confluence
 	m2 := pressRune(m, 'a')
 	for i, mod := range m2.Modules() {
-		if mod.Enabled {
-			t.Errorf("T5.1: modules[%d] should be disabled after 'a'", i)
-		}
-	}
-
-	// T5.2: a when any disabled → all enabled RW
-	m3 := pressRune(m2, 'a')
-	for i, mod := range m3.Modules() {
 		if !mod.Enabled {
-			t.Errorf("T5.2: modules[%d] should be enabled after second 'a'", i)
+			t.Errorf("T5.1: modules[%d] should be enabled after 'a' (was not all enabled)", i)
 		}
 		if mod.Access != tui.AccessReadWrite {
-			t.Errorf("T5.2: modules[%d].Access: got %d, want RW", i, mod.Access)
+			t.Errorf("T5.1: modules[%d].Access: got %d, want RW", i, mod.Access)
 		}
 	}
-	if m3.Preview() != "all" {
-		t.Errorf("T5.2: preview after re-enable all: got %q, want 'all'", m3.Preview())
+	if m2.Preview() != "all" {
+		t.Errorf("T5.1: preview after enabling all: got %q, want 'all'", m2.Preview())
+	}
+
+	// T5.2: a when all enabled → all disabled
+	m3 := pressRune(m2, 'a')
+	for i, mod := range m3.Modules() {
+		if mod.Enabled {
+			t.Errorf("T5.2: modules[%d] should be disabled after 'a' (was all enabled)", i)
+		}
+	}
+	if m3.Preview() != "" {
+		t.Errorf("T5.2: preview after disabling all: got %q, want ''", m3.Preview())
+	}
+
+	// T5.3: a when all disabled → all enabled RW again
+	m4 := pressRune(m3, 'a')
+	for i, mod := range m4.Modules() {
+		if !mod.Enabled {
+			t.Errorf("T5.3: modules[%d] should be enabled after 'a'", i)
+		}
+	}
+	if m4.Preview() != "all" {
+		t.Errorf("T5.3: preview after re-enable all: got %q, want 'all'", m4.Preview())
 	}
 }
 
@@ -317,51 +347,51 @@ func TestQuit(t *testing.T) {
 	}
 }
 
+// disableAll is a helper that returns a model with every module disabled.
+// Since initial state has confluence disabled (lean default), first 'a'
+// enables all (allEnabled=false branch), second 'a' disables all.
+func disableAll(m tui.Model) tui.Model {
+	m = pressRune(m, 'a') // enable all (confluence was off → allEnabled=false)
+	m = pressRune(m, 'a') // disable all (all now on → allEnabled=true)
+	return m
+}
+
 // --- T10: Preview string ---
 
 func TestPreviewString(t *testing.T) {
 	m := tui.NewModel()
 
-	// T10.1: all enabled RW → "all"
-	if m.Preview() != "all" {
-		t.Errorf("T10.1: all enabled → got %q, want 'all'", m.Preview())
+	// T10.1: initial state (confluence off by default) → lean list, not "all"
+	wantLeanPreview := "jira,agile,goals,metrics,releases,projects,teams,bitbucket"
+	if m.Preview() != wantLeanPreview {
+		t.Errorf("T10.1: initial lean state → got %q, want %q", m.Preview(), wantLeanPreview)
 	}
 
 	// T10.2: only jira enabled RW → "jira"
-	// disable all others
-	m2 := pressRune(m, 'a') // disable all
-	// enable jira only: cursor is at 0 (jira)
-	m2 = pressRune(m2, ' ') // enable jira
+	m2 := disableAll(m)     // all disabled
+	m2 = pressRune(m2, ' ') // enable jira (cursor=0)
 	if m2.Preview() != "jira" {
 		t.Errorf("T10.2: only jira → got %q, want 'jira'", m2.Preview())
 	}
 
 	// T10.3: jira-read + agile RW → "jira-read,agile"
-	m3 := pressRune(m, 'a') // disable all
-	m3 = pressRune(m3, ' ') // enable jira (cursor=0)
-	m3 = pressRune(m3, 'r') // jira → read-only
-	m3 = pressKey(m3, tea.KeyDown)  // cursor → 1 (agile)
-	m3 = pressRune(m3, ' ') // enable agile
+	m3 := disableAll(m)
+	m3 = pressRune(m3, ' ')        // enable jira (cursor=0)
+	m3 = pressRune(m3, 'r')        // jira → read-only
+	m3 = pressKey(m3, tea.KeyDown) // cursor → 1 (agile)
+	m3 = pressRune(m3, ' ')        // enable agile
 	if m3.Preview() != "jira-read,agile" {
 		t.Errorf("T10.3: jira-read,agile → got %q, want 'jira-read,agile'", m3.Preview())
 	}
 
 	// T10.4: no modules enabled → ""
-	m4 := pressRune(m, 'a') // disable all
+	m4 := disableAll(m)
 	if m4.Preview() != "" {
 		t.Errorf("T10.4: none enabled → got %q, want ''", m4.Preview())
 	}
 
 	// T10.5: preview follows allModules order (jira before agile)
-	m5 := pressRune(m, 'a') // disable all
-	// enable agile first (cursor at 0=jira, skip to 1=agile)
-	m5 = pressKey(m5, tea.KeyDown)
-	m5 = pressRune(m5, ' ') // enable agile
-	m5 = pressKey(m5, tea.KeyUp) // back to jira
-	m5 = pressKey(m5, tea.KeyUp) // cursor wraps... let's go back to 0
-	// simpler: navigate to 0
-	// Actually cursor is at 1 after down. Up from 1 → 0.
-	m5b := pressRune(m, 'a') // disable all
+	m5b := disableAll(m)
 	m5b = pressKey(m5b, tea.KeyDown) // → cursor=1 (agile)
 	m5b = pressRune(m5b, ' ')        // enable agile
 	m5b = pressKey(m5b, tea.KeyUp)   // → cursor=0 (jira)

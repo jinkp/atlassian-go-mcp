@@ -85,6 +85,11 @@ func runConnectivityTests(creds envstore.Credentials, bbCreds envstore.Bitbucket
 			results = append(results, pingBitbucket(ctx, bbCreds))
 		}
 
+		// Confluence — same credentials as Jira; ping /wiki/api/v2/spaces?limit=1
+		if fs.IsEnabled(features.ModuleConfluence, false) {
+			results = append(results, pingConfluence(ctx, httpClient, creds.BaseURL))
+		}
+
 		return testConnMsg{results: results}
 	}
 }
@@ -217,6 +222,32 @@ func pingTeams(ctx context.Context, doer client.HTTPDoer, orgID string) TestResu
 		return TestResult{Module: "teams", OK: false, Message: "org ID not found"}
 	default:
 		return TestResult{Module: "teams", OK: false, Message: fmt.Sprintf("HTTP %d", resp.StatusCode)}
+	}
+}
+
+// pingConfluence calls GET /wiki/api/v2/spaces?limit=1 to confirm Confluence access.
+func pingConfluence(ctx context.Context, doer client.HTTPDoer, baseURL string) TestResult {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		baseURL+"/wiki/api/v2/spaces?limit=1", nil)
+	if err != nil {
+		return TestResult{Module: "confluence", OK: false, Message: err.Error()}
+	}
+	resp, err := doer.Do(req)
+	if err != nil {
+		return TestResult{Module: "confluence", OK: false, Message: "network error: " + err.Error()}
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200:
+		return TestResult{Module: "confluence", OK: true, Message: "reachable"}
+	case 401:
+		return TestResult{Module: "confluence", OK: false, Message: "401 unauthorized — check email/token"}
+	case 403:
+		return TestResult{Module: "confluence", OK: false, Message: "403 forbidden — check Confluence license"}
+	case 404:
+		return TestResult{Module: "confluence", OK: false, Message: "404 — Confluence not enabled on this site"}
+	default:
+		return TestResult{Module: "confluence", OK: false, Message: fmt.Sprintf("HTTP %d", resp.StatusCode)}
 	}
 }
 

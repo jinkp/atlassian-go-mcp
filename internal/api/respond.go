@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/bitbucket"
+	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/confluence"
 	jira "github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
 )
 
@@ -70,6 +71,15 @@ func ErrToStatus(err error) (int, string) {
 		return http.StatusUnauthorized, ErrCodeUnauthorized
 	case errors.Is(err, bitbucket.ErrRateLimit):
 		return http.StatusTooManyRequests, ErrCodeRateLimited
+	// Confluence sentinels (separate error set, same HTTP semantics).
+	case errors.Is(err, confluence.ErrNotFound):
+		return http.StatusNotFound, ErrCodeNotFound
+	case errors.Is(err, confluence.ErrUnauthorized):
+		return http.StatusUnauthorized, ErrCodeUnauthorized
+	case errors.Is(err, confluence.ErrRateLimit):
+		return http.StatusTooManyRequests, ErrCodeRateLimited
+	case errors.Is(err, confluence.ErrConflict):
+		return http.StatusConflict, ErrCodeConflict
 	default:
 		return http.StatusInternalServerError, ErrCodeInternal
 	}

@@ -9,9 +9,9 @@ import (
 // TestParse covers F1.1–F1.12
 func TestParse(t *testing.T) {
 	tests := []struct {
-		name          string
-		input         string
-		wantModules   map[string]AccessLevel
+		name             string
+		input            string
+		wantModules      map[string]AccessLevel
 		wantAllModulesRW bool
 	}{
 		{
@@ -102,20 +102,20 @@ func TestParse(t *testing.T) {
 			if fs == nil {
 				t.Fatal("Parse returned nil")
 			}
-			if tc.wantAllModulesRW {
-				allMods := []string{"jira", "agile", "goals", "metrics", "releases", "projects", "teams"}
-				for _, mod := range allMods {
-					if !fs.IsEnabled(mod, false) {
-						t.Errorf("module %q: read not enabled, want enabled", mod)
-					}
-					if !fs.IsEnabled(mod, true) {
-						t.Errorf("module %q: write not enabled, want enabled", mod)
-					}
+		if tc.wantAllModulesRW {
+			allMods := []string{"jira", "agile", "goals", "metrics", "releases", "projects", "teams", "bitbucket", "confluence"}
+			for _, mod := range allMods {
+				if !fs.IsEnabled(mod, false) {
+					t.Errorf("module %q: read not enabled, want enabled", mod)
 				}
-				return
+				if !fs.IsEnabled(mod, true) {
+					t.Errorf("module %q: write not enabled, want enabled", mod)
+				}
 			}
-			// check exact module set
-			allMods := []string{"jira", "agile", "goals", "metrics", "releases", "projects", "teams"}
+			return
+		}
+		// check exact module set
+		allMods := []string{"jira", "agile", "goals", "metrics", "releases", "projects", "teams", "bitbucket", "confluence"}
 			for _, mod := range allMods {
 				wantLevel, wantPresent := tc.wantModules[mod]
 				gotRead := fs.IsEnabled(mod, false)
@@ -175,15 +175,15 @@ func TestIsEnabled(t *testing.T) {
 	}
 }
 
-// TestEnabledToolCount covers F3.1–F3.14
+// TestEnabledToolCount covers F3.1–F3.18
 func TestEnabledToolCount(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
 		want  int
 	}{
-		{"F3.1 all → 67", "all", 67},
-		{"F3.2 empty → 67", "", 67},
+		{"F3.1 all → 79", "all", 79},
+		{"F3.2 empty → 79", "", 79},
 		{"F3.3 jira → 14", "jira", 14},
 		{"F3.4 jira-read → 8", "jira-read", 8},
 		{"F3.5 jira-write → 6", "jira-write", 6},
@@ -197,6 +197,9 @@ func TestEnabledToolCount(t *testing.T) {
 		{"F3.15 bitbucket → 21", "bitbucket", 21},
 		{"F3.16 bitbucket-read → 12", "bitbucket-read", 12},
 		{"F3.17 bitbucket-write → 9", "bitbucket-write", 9},
+		{"F3.18 confluence → 12", "confluence", 12},
+		{"F3.19 confluence-read → 8", "confluence-read", 8},
+		{"F3.20 confluence-write → 4", "confluence-write", 4},
 		{"F3.13 unknown → 0", "unknown", 0},
 		{"F3.14 jira,agile → 22", "jira,agile", 22},
 	}
@@ -252,32 +255,32 @@ func TestDiagnostics(t *testing.T) {
 		{
 			name:  "all → every module (rw)",
 			input: "all",
-			want:  "jira(rw), agile(rw), goals(rw), metrics(rw), releases(rw), projects(rw), teams(rw), bitbucket(rw)",
+			want:  "jira(rw), agile(rw), goals(rw), metrics(rw), releases(rw), projects(rw), teams(rw), bitbucket(rw), confluence(rw)",
 		},
 		{
 			name:  "jira only → jira(rw), rest (--)",
 			input: "jira",
-			want:  "jira(rw), agile(--), goals(--), metrics(--), releases(--), projects(--), teams(--), bitbucket(--)",
+			want:  "jira(rw), agile(--), goals(--), metrics(--), releases(--), projects(--), teams(--), bitbucket(--), confluence(--)",
 		},
 		{
 			name:  "jira-read → jira(r)",
 			input: "jira-read",
-			want:  "jira(r), agile(--), goals(--), metrics(--), releases(--), projects(--), teams(--), bitbucket(--)",
+			want:  "jira(r), agile(--), goals(--), metrics(--), releases(--), projects(--), teams(--), bitbucket(--), confluence(--)",
 		},
 		{
 			name:  "jira-write → jira(w)",
 			input: "jira-write",
-			want:  "jira(w), agile(--), goals(--), metrics(--), releases(--), projects(--), teams(--), bitbucket(--)",
+			want:  "jira(w), agile(--), goals(--), metrics(--), releases(--), projects(--), teams(--), bitbucket(--), confluence(--)",
 		},
 		{
 			name:  "mixed → jira(rw), agile(r)",
 			input: "jira,agile-read",
-			want:  "jira(rw), agile(r), goals(--), metrics(--), releases(--), projects(--), teams(--), bitbucket(--)",
+			want:  "jira(rw), agile(r), goals(--), metrics(--), releases(--), projects(--), teams(--), bitbucket(--), confluence(--)",
 		},
 		{
 			name:  "unknown only → all (--)",
 			input: "unknown",
-			want:  "jira(--), agile(--), goals(--), metrics(--), releases(--), projects(--), teams(--), bitbucket(--)",
+			want:  "jira(--), agile(--), goals(--), metrics(--), releases(--), projects(--), teams(--), bitbucket(--), confluence(--)",
 		},
 	}
 
@@ -296,11 +299,11 @@ func TestDiagnostics(t *testing.T) {
 }
 
 // TestTotalToolCount validates the exported total.
-// Updated: jira expanded from {4,3} to {8,6} → total is now 67.
+// Updated: confluence module added {8,4} → total is now 79 (was 67).
 func TestTotalToolCount(t *testing.T) {
 	got := TotalToolCount()
-	if got != 67 {
-		t.Errorf("TotalToolCount(): got %d, want 67", got)
+	if got != 79 {
+		t.Errorf("TotalToolCount(): got %d, want 79", got)
 	}
 }
 
@@ -316,4 +319,72 @@ func TestParse_Triangulate(t *testing.T) {
 	if !fs.IsEnabled("jira", true) {
 		t.Error("jira-read,jira-write: write should be enabled")
 	}
+}
+
+// TestDefaultProfile validates the lean-default constant:
+// (a) "all" still includes Confluence (read+write)
+// (b) DefaultProfile excludes Confluence but includes all other 8 modules at RW
+// (c) explicit "confluence" token still enables it
+func TestDefaultProfile(t *testing.T) {
+	leanModules := []string{"jira", "agile", "goals", "metrics", "releases", "projects", "teams", "bitbucket"}
+
+	t.Run("all includes confluence (read+write)", func(t *testing.T) {
+		fs := Parse("all")
+		if !fs.IsEnabled(ModuleConfluence, false) {
+			t.Error("Parse('all'): confluence read should be enabled")
+		}
+		if !fs.IsEnabled(ModuleConfluence, true) {
+			t.Error("Parse('all'): confluence write should be enabled")
+		}
+		if got := fs.EnabledToolCount(); got != 79 {
+			t.Errorf("Parse('all').EnabledToolCount(): got %d, want 79", got)
+		}
+	})
+
+	t.Run("DefaultProfile excludes confluence", func(t *testing.T) {
+		fs := Parse(DefaultProfile)
+		// confluence MUST be off
+		if fs.IsEnabled(ModuleConfluence, false) {
+			t.Error("DefaultProfile: confluence read should NOT be enabled")
+		}
+		if fs.IsEnabled(ModuleConfluence, true) {
+			t.Error("DefaultProfile: confluence write should NOT be enabled")
+		}
+		// all other 8 modules MUST be on at RW
+		for _, mod := range leanModules {
+			if !fs.IsEnabled(mod, false) {
+				t.Errorf("DefaultProfile: module %q read should be enabled", mod)
+			}
+			if !fs.IsEnabled(mod, true) {
+				t.Errorf("DefaultProfile: module %q write should be enabled", mod)
+			}
+		}
+		// tool count = 79 - 12 (confluence) = 67
+		if got := fs.EnabledToolCount(); got != 67 {
+			t.Errorf("DefaultProfile.EnabledToolCount(): got %d, want 67", got)
+		}
+	})
+
+	t.Run("explicit confluence token enables it", func(t *testing.T) {
+		fs := Parse("confluence")
+		if !fs.IsEnabled(ModuleConfluence, false) {
+			t.Error("Parse('confluence'): read should be enabled")
+		}
+		if !fs.IsEnabled(ModuleConfluence, true) {
+			t.Error("Parse('confluence'): write should be enabled")
+		}
+		if got := fs.EnabledToolCount(); got != 12 {
+			t.Errorf("Parse('confluence').EnabledToolCount(): got %d, want 12", got)
+		}
+	})
+
+	t.Run("lean+confluence enables 9 modules (79 tools)", func(t *testing.T) {
+		fs := Parse(DefaultProfile + ",confluence")
+		if !fs.IsEnabled(ModuleConfluence, false) {
+			t.Error("lean+confluence: confluence read should be enabled")
+		}
+		if got := fs.EnabledToolCount(); got != 79 {
+			t.Errorf("lean+confluence EnabledToolCount(): got %d, want 79", got)
+		}
+	})
 }

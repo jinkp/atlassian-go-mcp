@@ -10,6 +10,7 @@ import (
 
 	atlcliagile "github.com/jinkp/atlassian-go-mcp/cmd/atlassian/agile"
 	atlclibitbucket "github.com/jinkp/atlassian-go-mcp/cmd/atlassian/bitbucket"
+	atlcliconfluence "github.com/jinkp/atlassian-go-mcp/cmd/atlassian/confluence"
 	atlcligoals "github.com/jinkp/atlassian-go-mcp/cmd/atlassian/goals"
 	"github.com/jinkp/atlassian-go-mcp/cmd/atlassian/jira"
 	atlcliprojects "github.com/jinkp/atlassian-go-mcp/cmd/atlassian/projects"
@@ -19,6 +20,7 @@ import (
 	agilesvc "github.com/jinkp/atlassian-go-mcp/internal/atlassian/agile"
 	bitbucketsvc "github.com/jinkp/atlassian-go-mcp/internal/atlassian/bitbucket"
 	atlclient "github.com/jinkp/atlassian-go-mcp/internal/atlassian/client"
+	confluencesvc "github.com/jinkp/atlassian-go-mcp/internal/atlassian/confluence"
 	goalssvc "github.com/jinkp/atlassian-go-mcp/internal/atlassian/goals"
 	jirasvc "github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
 	projectssvc "github.com/jinkp/atlassian-go-mcp/internal/atlassian/projects"
@@ -68,12 +70,13 @@ func buildRootCmd() *cobra.Command {
 	}
 
 	var (
-		svc         jirasvc.Service
-		agileSvc    agilesvc.AgileService
-		goalsSvc    goalssvc.GoalsService
-		releasesSvc releasessvc.ReleasesService
-		projectsSvc projectssvc.ProjectsService
-		teamsSvc    teamssvc.TeamsService
+		svc          jirasvc.Service
+		agileSvc     agilesvc.AgileService
+		goalsSvc     goalssvc.GoalsService
+		releasesSvc  releasessvc.ReleasesService
+		projectsSvc  projectssvc.ProjectsService
+		teamsSvc     teamssvc.TeamsService
+		confluenceSvc confluencesvc.Service
 	)
 
 	if err == nil {
@@ -84,6 +87,7 @@ func buildRootCmd() *cobra.Command {
 			goalsSvc = goalssvc.NewService(c, cfg.BaseURL)
 			releasesSvc = releasessvc.NewService(c, cfg.BaseURL)
 			projectsSvc = projectssvc.NewService(c, cfg.BaseURL)
+			confluenceSvc = confluencesvc.NewService(c, cfg.BaseURL)
 			// ATLASSIAN_ORG_ID is required for teams commands only — validate lazily.
 			orgID := os.Getenv("ATLASSIAN_ORG_ID")
 			teamsSvc = teamssvc.NewService(c, orgID)
@@ -109,6 +113,9 @@ func buildRootCmd() *cobra.Command {
 	}
 	if teamsSvc == nil {
 		teamsSvc = &nilTeamsService{}
+	}
+	if confluenceSvc == nil {
+		confluenceSvc = &nilConfluenceService{}
 	}
 
 	// Jira subgroup
@@ -140,6 +147,11 @@ func buildRootCmd() *cobra.Command {
 	teamsRoot := atlcliteams.NewTeamsCmd()
 	atlcliteams.RegisterCommands(teamsRoot, teamsSvc)
 	root.AddCommand(teamsRoot)
+
+	// Confluence subgroup
+	confluenceRoot := atlcliconfluence.NewConfluenceCmd()
+	atlcliconfluence.RegisterCommands(confluenceRoot, confluenceSvc, auditLog, dryRun)
+	root.AddCommand(confluenceRoot)
 
 	// Bitbucket subgroup — uses its own host/credentials (BITBUCKET_*), loaded from
 	// the shared ~/.atlassian/credentials.env. The client is always constructible
@@ -380,5 +392,47 @@ func (n *nilTeamsService) GetTeam(_ context.Context, _ string) (*teamssvc.Team, 
 	return nil, fmt.Errorf("service not initialized: missing env vars")
 }
 func (n *nilTeamsService) GetTeamMembers(_ context.Context, _ string, _ int) ([]teamssvc.TeamMember, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+
+// --- nilConfluenceService: no-op Confluence service for --help without credentials ---
+// Never reached because PersistentPreRunE exits(1) first.
+
+type nilConfluenceService struct{}
+
+func (n *nilConfluenceService) GetPage(_ context.Context, _ string, _ string) (*confluencesvc.Page, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilConfluenceService) GetPagesInSpace(_ context.Context, _ string, _ int, _ string) (*confluencesvc.PageList, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilConfluenceService) GetSpaces(_ context.Context, _ int, _ string, _ []string, _ string) (*confluencesvc.SpaceList, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilConfluenceService) GetPageDescendants(_ context.Context, _ string, _ int, _ string) (*confluencesvc.PageRefList, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilConfluenceService) GetFooterComments(_ context.Context, _ string, _ int, _ string) (*confluencesvc.CommentList, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilConfluenceService) GetInlineComments(_ context.Context, _ string, _ int, _ string) (*confluencesvc.CommentList, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilConfluenceService) GetCommentChildren(_ context.Context, _ string, _ int, _ string) (*confluencesvc.CommentList, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilConfluenceService) CreatePage(_ context.Context, _ confluencesvc.CreatePageRequest) (*confluencesvc.Page, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilConfluenceService) UpdatePage(_ context.Context, _ confluencesvc.UpdatePageRequest) (*confluencesvc.Page, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilConfluenceService) CreateFooterComment(_ context.Context, _ confluencesvc.CreateCommentRequest) (*confluencesvc.Comment, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilConfluenceService) CreateInlineComment(_ context.Context, _ confluencesvc.CreateInlineCommentRequest) (*confluencesvc.Comment, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
+func (n *nilConfluenceService) SearchContent(_ context.Context, _ string, _ int) ([]confluencesvc.SearchResult, error) {
 	return nil, fmt.Errorf("service not initialized: missing env vars")
 }

@@ -28,6 +28,7 @@ import (
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/agile"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/bitbucket"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/client"
+	confluencepkg "github.com/jinkp/atlassian-go-mcp/internal/atlassian/confluence"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/goals"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/projects"
@@ -206,6 +207,7 @@ func newMCPCommand() *cobra.Command {
 			// at invocation time with an appropriate error — non-teams tools are unaffected.
 			orgID := os.Getenv("ATLASSIAN_ORG_ID")
 			teamsSvc := teams.NewService(httpClient, orgID)
+			confluenceSvc := confluencepkg.NewService(httpClient, cfg.BaseURL)
 
 			// Bitbucket uses a DIFFERENT host (api.bitbucket.org) and DIFFERENT credentials
 			// (base64 username:apiToken), loaded from the shared ~/.atlassian/credentials.env.
@@ -231,13 +233,15 @@ func newMCPCommand() *cobra.Command {
 			fs := features.Parse(enableFlag)
 			mcpserver.SetVersion(version)
 			mcpserver.LogStartupDiagnostics(os.Stderr, fs)
-			return mcpserver.StartServer(svc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, bitbucketSvc, auditLog, fs)
+			return mcpserver.StartServer(svc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, bitbucketSvc, confluenceSvc, auditLog, fs)
 		},
 	}
-	cmd.Flags().StringVar(&enableFlag, "enable", "all",
-		"Comma-separated modules to enable: jira,agile,goals,metrics,releases,projects,teams,bitbucket\n"+
+	cmd.Flags().StringVar(&enableFlag, "enable", features.DefaultProfile,
+		"Comma-separated modules to enable (default: all modules except Confluence).\n"+
 			"Suffix -read or -write for access control (e.g. jira-read,agile).\n"+
-			"Default 'all' enables every tool.")
+			"Use 'all' to enable every module including Confluence (79 tools).\n"+
+			"Add ',confluence' to the default list to include only the Confluence module.\n"+
+			"Default lean profile: "+features.DefaultProfile)
 	return cmd
 }
 

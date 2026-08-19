@@ -19,6 +19,7 @@ import (
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/agile"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/bitbucket"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/client"
+	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/confluence"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/goals"
 	jira "github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/projects"
@@ -69,6 +70,7 @@ func main() {
 	goalsSvc := goals.NewService(httpClient, baseURL)
 	releasesSvc := releases.NewService(httpClient, baseURL)
 	projectsSvc := projects.NewService(httpClient, baseURL)
+	confluenceSvc := confluence.NewService(httpClient, baseURL)
 
 	// Teams uses a different API base URL and requires ATLASSIAN_ORG_ID.
 	// An empty orgID is allowed at startup — requests to /teams will fail at call time.
@@ -176,9 +178,25 @@ func main() {
 		mux.HandleFunc("POST /bitbucket/pullrequests/{id}/tasks", bbH.CreateTask)
 		mux.HandleFunc("PUT /bitbucket/pullrequests/{id}/tasks/{taskId}", bbH.ResolveTask)
 		mux.HandleFunc("POST /bitbucket/pipelines", bbH.RunPipeline)
+
+		confluenceH := handlers.NewConfluenceHandler(s.ConfluenceSvc(), s.AuditLog())
+		// read (8)
+		mux.HandleFunc("GET /confluence/pages/{pageId}", confluenceH.GetPage)
+		mux.HandleFunc("GET /confluence/spaces/{spaceId}/pages", confluenceH.GetPagesInSpace)
+		mux.HandleFunc("GET /confluence/spaces", confluenceH.GetSpaces)
+		mux.HandleFunc("GET /confluence/pages/{pageId}/descendants", confluenceH.GetPageDescendants)
+		mux.HandleFunc("GET /confluence/pages/{pageId}/footer-comments", confluenceH.GetFooterComments)
+		mux.HandleFunc("GET /confluence/pages/{pageId}/inline-comments", confluenceH.GetInlineComments)
+		mux.HandleFunc("GET /confluence/comments/{commentId}/children", confluenceH.GetCommentChildren)
+		mux.HandleFunc("GET /confluence/search", confluenceH.SearchContent)
+		// write (4, guarded by X-Enable-Write via global WriteGuardMiddleware)
+		mux.HandleFunc("POST /confluence/pages", confluenceH.CreatePage)
+		mux.HandleFunc("PUT /confluence/pages/{pageId}", confluenceH.UpdatePage)
+		mux.HandleFunc("POST /confluence/footer-comments", confluenceH.CreateFooterComment)
+		mux.HandleFunc("POST /confluence/inline-comments", confluenceH.CreateInlineComment)
 	})
 
-	srv := api.NewServer(jiraSvc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, bitbucketSvc, auditLog, *readOnly, *port)
+	srv := api.NewServer(jiraSvc, agileSvc, goalsSvc, releasesSvc, projectsSvc, teamsSvc, bitbucketSvc, confluenceSvc, auditLog, *readOnly, *port)
 	log.Printf("atlassian-api: listening on :%d (read-only=%v)", *port, *readOnly)
 	log.Fatal(srv.Start())
 }

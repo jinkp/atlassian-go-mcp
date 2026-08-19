@@ -104,6 +104,8 @@ var defaultModules = []ModuleConfig{
 	{Name: features.ModuleProjects, Enabled: true, Access: AccessReadWrite},
 	{Name: features.ModuleTeams, Enabled: true, Access: AccessReadWrite},
 	{Name: features.ModuleBitbucket, Enabled: true, Access: AccessReadWrite},
+	// Confluence is off by default: lean install. Enable via 'a' or space, or pass --enable all.
+	{Name: features.ModuleConfluence, Enabled: false, Access: AccessReadWrite},
 }
 
 var defaultRegOpts = []RegOption{
