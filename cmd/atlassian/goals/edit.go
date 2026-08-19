@@ -7,6 +7,7 @@ import (
 
 	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/goals"
+	"github.com/jinkp/atlassian-go-mcp/internal/cliutil"
 	"github.com/spf13/cobra"
 )
 
@@ -26,7 +27,7 @@ func NewEditCmd(svc goals.GoalsService, auditLog audit.Logger, dryRun bool) *cob
 		RunE: func(cmd *cobra.Command, args []string) error {
 			goalID := args[0]
 
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would edit goal: goal-id=%s\n", goalID)
 				return nil
 			}

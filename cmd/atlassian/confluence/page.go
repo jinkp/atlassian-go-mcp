@@ -7,6 +7,7 @@ import (
 
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/confluence"
 	"github.com/jinkp/atlassian-go-mcp/internal/audit"
+	"github.com/jinkp/atlassian-go-mcp/internal/cliutil"
 	"github.com/jinkp/atlassian-go-mcp/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -172,7 +173,7 @@ func newPageCreateCmd(svc confluence.Service, auditLog audit.Logger, dryRun bool
 		Use:   "create",
 		Short: "Create a new Confluence page",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(),
 					"[DRY RUN] Would create page %q in space %s\n", title, spaceID)
 				return nil
@@ -227,7 +228,7 @@ func newPageUpdateCmd(svc confluence.Service, auditLog audit.Logger, dryRun bool
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pageID := args[0]
 
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(),
 					"[DRY RUN] Would update page %s with title %q\n", pageID, title)
 				return nil

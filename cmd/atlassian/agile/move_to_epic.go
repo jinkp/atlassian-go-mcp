@@ -7,6 +7,7 @@ import (
 
 	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/agile"
+	"github.com/jinkp/atlassian-go-mcp/internal/cliutil"
 	"github.com/spf13/cobra"
 )
 
@@ -21,7 +22,7 @@ func NewMoveToEpicCmd(svc agile.AgileService, auditLog audit.Logger, dryRun bool
 		Use:   "move-to-epic",
 		Short: "Link issues to an epic",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would move issues to epic: epic-key=%s issues=%s\n", epicKey, issuesFlag)
 				return nil
 			}

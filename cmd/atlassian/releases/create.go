@@ -7,6 +7,7 @@ import (
 
 	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/releases"
+	"github.com/jinkp/atlassian-go-mcp/internal/cliutil"
 	"github.com/spf13/cobra"
 )
 
@@ -24,7 +25,7 @@ func NewCreateCmd(svc releases.ReleasesService, auditLog audit.Logger, dryRun bo
 		Use:   "create",
 		Short: "Create a new Jira release (version)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would create release: project-id=%s name=%q\n", projectID, name)
 				return nil
 			}

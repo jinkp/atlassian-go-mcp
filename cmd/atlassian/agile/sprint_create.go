@@ -7,6 +7,7 @@ import (
 
 	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/agile"
+	"github.com/jinkp/atlassian-go-mcp/internal/cliutil"
 	"github.com/spf13/cobra"
 )
 
@@ -23,7 +24,7 @@ func NewSprintCreateCmd(svc agile.AgileService, auditLog audit.Logger, dryRun bo
 		Use:   "create",
 		Short: "Create a new sprint on a board",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would create sprint: board-id=%d name=%q\n", boardID, name)
 				return nil
 			}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/releases"
+	"github.com/jinkp/atlassian-go-mcp/internal/cliutil"
 	"github.com/spf13/cobra"
 )
 
@@ -25,7 +26,7 @@ func NewUpdateCmd(svc releases.ReleasesService, auditLog audit.Logger, dryRun bo
 		Short: "Update a Jira release (version)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would update release: release-id=%s\n", args[0])
 				return nil
 			}

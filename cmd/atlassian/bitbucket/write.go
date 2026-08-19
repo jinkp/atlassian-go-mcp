@@ -7,6 +7,7 @@ import (
 
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/bitbucket"
 	"github.com/jinkp/atlassian-go-mcp/internal/audit"
+	"github.com/jinkp/atlassian-go-mcp/internal/cliutil"
 	"github.com/spf13/cobra"
 )
 
@@ -44,7 +45,7 @@ func newPRCreateCmd(svc bitbucket.BitbucketService, auditLog audit.Logger, dryRu
 			if err != nil {
 				fail(err)
 			}
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would create PR in %s/%s: %q (%s -> %s)\n", ws, repo, title, source, destination)
 				return nil
 			}
@@ -97,7 +98,7 @@ func newPRCommentCmd(svc bitbucket.BitbucketService, auditLog audit.Logger, dryR
 			if err != nil {
 				fail(err)
 			}
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would comment on PR #%d in %s/%s\n", id, ws, repo)
 				return nil
 			}
@@ -139,7 +140,7 @@ func newPRUpdateCmd(svc bitbucket.BitbucketService, auditLog audit.Logger, dryRu
 				strings.TrimSpace(destination) == "" && strings.TrimSpace(reviewers) == "" {
 				fail(fmt.Errorf("at least one of --title, --description, --destination, --reviewers is required"))
 			}
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would update PR #%d in %s/%s\n", id, ws, repo)
 				return nil
 			}
@@ -181,7 +182,7 @@ func newPRApproveCmd(svc bitbucket.BitbucketService, auditLog audit.Logger, dryR
 			if err != nil {
 				fail(err)
 			}
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would approve PR #%d in %s/%s\n", id, ws, repo)
 				return nil
 			}
@@ -216,7 +217,7 @@ func newPRTaskCreateCmd(svc bitbucket.BitbucketService, auditLog audit.Logger, d
 			if err != nil {
 				fail(err)
 			}
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would create task on PR #%d in %s/%s\n", id, ws, repo)
 				return nil
 			}
@@ -250,7 +251,7 @@ func newPRDeclineCmd(svc bitbucket.BitbucketService, auditLog audit.Logger, dryR
 			if err != nil {
 				fail(err)
 			}
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would decline PR #%d in %s/%s\n", id, ws, repo)
 				return nil
 			}
@@ -285,7 +286,7 @@ func newPRMergeCmd(svc bitbucket.BitbucketService, auditLog audit.Logger, dryRun
 			if err != nil {
 				fail(err)
 			}
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would merge PR #%d in %s/%s (strategy=%q)\n", id, ws, repo, strategy)
 				return nil
 			}
@@ -318,7 +319,7 @@ func newPipelineRunCmd(svc bitbucket.BitbucketService, auditLog audit.Logger, dr
 			if err != nil {
 				fail(err)
 			}
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would run pipeline on branch %q in %s/%s\n", branch, ws, repo)
 				return nil
 			}
@@ -356,7 +357,7 @@ func newPRTaskResolveCmd(svc bitbucket.BitbucketService, auditLog audit.Logger, 
 			if taskID <= 0 {
 				fail(fmt.Errorf("--task must be a positive integer"))
 			}
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would resolve task #%d on PR #%d in %s/%s\n", taskID, id, ws, repo)
 				return nil
 			}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
+	"github.com/jinkp/atlassian-go-mcp/internal/cliutil"
 	"github.com/spf13/cobra"
 )
 
@@ -35,7 +36,7 @@ func newWorklogAddCmd(svc jira.Service, auditLog audit.Logger, dryRun bool) *cob
 		RunE: func(cmd *cobra.Command, args []string) error {
 			key := args[0]
 
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would add worklog to %s: time-spent=%s\n", key, timeSpent)
 				return nil
 			}

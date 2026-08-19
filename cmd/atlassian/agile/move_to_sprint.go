@@ -8,6 +8,7 @@ import (
 
 	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/agile"
+	"github.com/jinkp/atlassian-go-mcp/internal/cliutil"
 	"github.com/spf13/cobra"
 )
 
@@ -22,7 +23,7 @@ func NewMoveToSprintCmd(svc agile.AgileService, auditLog audit.Logger, dryRun bo
 		Use:   "move-to-sprint",
 		Short: "Move issues into a sprint",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would move issues to sprint: sprint-id=%d issues=%s\n", sprintID, issuesFlag)
 				return nil
 			}

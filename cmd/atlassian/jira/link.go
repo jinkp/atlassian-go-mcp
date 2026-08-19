@@ -7,6 +7,7 @@ import (
 
 	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
+	"github.com/jinkp/atlassian-go-mcp/internal/cliutil"
 	"github.com/jinkp/atlassian-go-mcp/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -23,7 +24,7 @@ func NewLinkCmd(svc jira.Service, auditLog audit.Logger, dryRun bool) *cobra.Com
 			inward := args[0]
 			outward := args[1]
 
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would link %s → %s (type: %s)\n", inward, outward, linkType)
 				return nil
 			}

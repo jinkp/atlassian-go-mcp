@@ -8,6 +8,7 @@ import (
 
 	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/goals"
+	"github.com/jinkp/atlassian-go-mcp/internal/cliutil"
 	"github.com/spf13/cobra"
 )
 
@@ -53,7 +54,7 @@ func NewMetricCreateCmd(svc goals.GoalsService, auditLog audit.Logger, dryRun bo
 		Use:   "metric-create",
 		Short: "Create a new metric and attach it to an Atlassian Goal",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would create metric: goal-id=%s name=%q type=%s start=%g target=%g initial=%g\n",
 					goalID, name, metricType, startValue, targetValue, initialValue)
 				return nil
@@ -109,7 +110,7 @@ func NewMetricValueCmd(svc goals.GoalsService, auditLog audit.Logger, dryRun boo
 		Use:   "metric-value",
 		Short: "Add a value datapoint to an existing metric",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would add metric value: metric-id=%s value=%g\n", metricID, value)
 				return nil
 			}
@@ -154,7 +155,7 @@ func NewMetricTargetCmd(svc goals.GoalsService, auditLog audit.Logger, dryRun bo
 		Use:   "metric-target",
 		Short: "Update start, current, and/or target values of a MetricTarget",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would update metric target: metric-target-id=%s\n", metricTargetID)
 				return nil
 			}

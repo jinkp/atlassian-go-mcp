@@ -7,6 +7,7 @@ import (
 
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/confluence"
 	"github.com/jinkp/atlassian-go-mcp/internal/audit"
+	"github.com/jinkp/atlassian-go-mcp/internal/cliutil"
 	"github.com/jinkp/atlassian-go-mcp/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -174,7 +175,7 @@ func newCommentAddFooterCmd(svc confluence.Service, auditLog audit.Logger, dryRu
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pageID := args[0]
 
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(),
 					"[DRY RUN] Would add footer comment to page %s\n", pageID)
 				return nil
@@ -223,7 +224,7 @@ func newCommentAddInlineCmd(svc confluence.Service, auditLog audit.Logger, dryRu
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pageID := args[0]
 
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(),
 					"[DRY RUN] Would add inline comment to page %s anchored on %q\n", pageID, textSelection)
 				return nil

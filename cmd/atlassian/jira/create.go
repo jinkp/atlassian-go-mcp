@@ -7,6 +7,7 @@ import (
 
 	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
+	"github.com/jinkp/atlassian-go-mcp/internal/cliutil"
 	"github.com/spf13/cobra"
 )
 
@@ -25,7 +26,7 @@ func NewCreateCmd(svc jira.Service, auditLog audit.Logger, dryRun bool) *cobra.C
 		Use:   "create",
 		Short: "Create a new Jira issue",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would create jira issue: project=%s type=%s summary=%q\n", project, issueType, summary)
 				return nil
 			}

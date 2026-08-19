@@ -7,6 +7,7 @@ import (
 
 	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/goals"
+	"github.com/jinkp/atlassian-go-mcp/internal/cliutil"
 	"github.com/spf13/cobra"
 )
 
@@ -27,7 +28,7 @@ func NewCreateCmd(svc goals.GoalsService, auditLog audit.Logger, dryRun bool) *c
 		Long: `Create a new Goal for a site. Requires the goal type ID (an ARI) which can be
 obtained from your Atlassian admin or workspace settings.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would create goal: site-id=%s name=%q target-date=%s\n", siteID, name, targetDate)
 				return nil
 			}

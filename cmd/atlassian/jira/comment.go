@@ -8,6 +8,7 @@ import (
 
 	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
+	"github.com/jinkp/atlassian-go-mcp/internal/cliutil"
 	"github.com/jinkp/atlassian-go-mcp/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -34,7 +35,7 @@ func newCommentAddCmd(svc jira.Service, auditLog audit.Logger, dryRun bool) *cob
 			key := args[0]
 			body := strings.Join(args[1:], " ")
 
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would add comment to %s: %q\n", key, body)
 				return nil
 			}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/jinkp/atlassian-go-mcp/internal/audit"
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/goals"
+	"github.com/jinkp/atlassian-go-mcp/internal/cliutil"
 	"github.com/spf13/cobra"
 )
 
@@ -23,7 +24,7 @@ func NewUpdateCmd(svc goals.GoalsService, auditLog audit.Logger, dryRun bool) *c
 		Use:   "update",
 		Short: "Post a status update (check-in) to an Atlassian Goal",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if dryRun {
+			if cliutil.ResolveDryRun(cmd, dryRun) {
 				fmt.Fprintf(cmd.OutOrStdout(), "[DRY RUN] Would update goal status: goal-id=%s status=%s\n", goalID, status)
 				return nil
 			}
