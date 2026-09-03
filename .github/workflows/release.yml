@@ -1,0 +1,56 @@
+name: release
+
+# Builds the three Windows binaries and publishes them as GitHub Release assets
+# whenever a version tag (vX.Y.Z) is pushed. Asset names match what install.ps1
+# downloads: atlassian.exe, atlassian-mcp.exe, atlassian-api.exe.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build Windows binaries
+        env:
+          CGO_ENABLED: "0"
+          GOOS: windows
+          GOARCH: amd64
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          COMMIT="$(git rev-parse --short HEAD)"
+          DATE="$(date -u +%Y-%m-%d)"
+          LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}"
+          echo "Building ${VERSION} (commit ${COMMIT}, ${DATE})"
+          mkdir -p dist
+          go build -ldflags "${LDFLAGS}" -o dist/atlassian.exe     ./cmd/atlassian
+          go build -ldflags "${LDFLAGS}" -o dist/atlassian-mcp.exe ./cmd/mcp
+          go build -ldflags "${LDFLAGS}" -o dist/atlassian-api.exe ./cmd/api
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/atlassian.exe
+            dist/atlassian-mcp.exe
+            dist/atlassian-api.exe
+          generate_release_notes: true
+          fail_on_unmatched_files: true
