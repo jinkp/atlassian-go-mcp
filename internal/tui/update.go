@@ -8,6 +8,7 @@ import (
 
 	"github.com/jinkp/atlassian-go-mcp/internal/claude"
 	"github.com/jinkp/atlassian-go-mcp/internal/claudedesktop"
+	"github.com/jinkp/atlassian-go-mcp/internal/claudeplugin"
 	"github.com/jinkp/atlassian-go-mcp/internal/cursor"
 	"github.com/jinkp/atlassian-go-mcp/internal/envstore"
 	"github.com/jinkp/atlassian-go-mcp/internal/opencode"
@@ -312,6 +313,15 @@ func (m Model) executeRegistration() Model {
 		enableVal = "all"
 	}
 	args := []string{"mcp", "--enable", enableVal}
+
+	// Write tools are registered via --enable but ALSO gated at runtime by the
+	// ENABLE_WRITE guard (see internal/mcp/server.go WriteGuardCheck). When any
+	// enabled module has read+write access, inject ENABLE_WRITE=true into the
+	// generated client config so write tools actually work — not just register.
+	var env map[string]string
+	if m.WriteEnabled() {
+		env = map[string]string{"ENABLE_WRITE": "true"}
+	}
 	m.doneMsg = fmt.Sprintf("atlassian-mcp mcp --enable %s", enableVal)
 
 	opt := m.regOpts[m.regCursor]
@@ -324,9 +334,9 @@ func (m Model) executeRegistration() Model {
 		case "opencode":
 			var err error
 			if scope == ScopeLocal {
-				err = opencode.SaveWithArgsLocal(args)
+				err = opencode.SaveWithArgsEnvLocal(args, env)
 			} else {
-				err = opencode.SaveWithArgs(args)
+				err = opencode.SaveWithArgsEnv(args, env)
 			}
 			if err != nil {
 				addErr(fmt.Sprintf("OpenCode: %v", err))
@@ -334,23 +344,33 @@ func (m Model) executeRegistration() Model {
 		case "claude":
 			var err error
 			if scope == ScopeLocal {
-				err = claude.SaveWithArgsLocal(args)
+				err = claude.SaveWithArgsEnvLocal(args, env)
 			} else {
-				err = claude.SaveWithArgs(args)
+				err = claude.SaveWithArgsEnv(args, env)
 			}
 			if err != nil {
 				addErr(fmt.Sprintf("Claude Code: %v", err))
 			}
+		case "claude-plugin":
+			dir := claudeplugin.GlobalDir()
+			if scope == ScopeLocal {
+				dir = claudeplugin.LocalDir()
+			}
+			// version "" → manifest omits it (fine for a skills-dir plugin; the
+			// TUI has no build version injected). Write access flows via env.
+			if err := claudeplugin.SaveWithArgsEnv(dir, "", args, env); err != nil {
+				addErr(fmt.Sprintf("Claude Plugin: %v", err))
+			}
 		case "claude-desktop":
-			if err := claudedesktop.SaveWithArgs(args); err != nil {
+			if err := claudedesktop.SaveWithArgsEnv(args, env); err != nil {
 				addErr(fmt.Sprintf("Claude Desktop: %v", err))
 			}
 		case "cursor":
 			var err error
 			if scope == ScopeLocal {
-				err = cursor.SaveWithArgsLocal(args)
+				err = cursor.SaveWithArgsEnvLocal(args, env)
 			} else {
-				err = cursor.SaveWithArgs(args)
+				err = cursor.SaveWithArgsEnv(args, env)
 			}
 			if err != nil {
 				addErr(fmt.Sprintf("Cursor: %v", err))

@@ -103,6 +103,15 @@ func (m Model) viewModules() string {
 		previewLine = "Preview: (no modules selected)"
 	}
 	b.WriteString(stylePreview.Render(previewLine))
+	b.WriteString("\n")
+
+	// Write guard status — makes it explicit that read+write also writes
+	// ENABLE_WRITE=true into the client config (otherwise writes stay blocked).
+	if m.WriteEnabled() {
+		b.WriteString(styleSuccess.Render("Write guard: ENABLE_WRITE=true will be written to the client config"))
+	} else {
+		b.WriteString(styleHelp.Render("Write guard: read-only (no ENABLE_WRITE set)"))
+	}
 	b.WriteString("\n\n")
 	b.WriteString(styleHelp.Render("[jk] Move  [space] Toggle  [r] Read-only  [a] All  [enter] Next  [q] Quit"))
 
@@ -265,6 +274,16 @@ func (m Model) viewDone() string {
 
 	b.WriteString("\n\nCommand to run the MCP server:\n")
 	b.WriteString(styleCmd.Render("  " + m.doneMsg))
+
+	// Show the write guard env var that was written into the client config so the
+	// user understands write access is enabled (and how to reproduce it manually).
+	if m.WriteEnabled() {
+		b.WriteString("\n\nEnvironment written to client config:\n")
+		b.WriteString(styleSuccess.Render("  ENABLE_WRITE=true"))
+	} else {
+		b.WriteString("\n\n")
+		b.WriteString(styleHelp.Render("Read-only: set ENABLE_WRITE=true to enable write tools."))
+	}
 	b.WriteString("\n\n")
 	b.WriteString(styleHelp.Render("[enter/q] Quit"))
 

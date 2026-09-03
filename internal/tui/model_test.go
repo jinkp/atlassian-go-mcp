@@ -329,6 +329,68 @@ func TestRegisterEnter(t *testing.T) {
 	}
 }
 
+// --- T8b: Write guard detection + surfacing ---
+
+func TestWriteEnabled_Detection(t *testing.T) {
+	m := tui.NewModel()
+
+	// T8b.1: default lean state has 8 RW modules → write enabled
+	if !m.WriteEnabled() {
+		t.Error("T8b.1: default state should have WriteEnabled()=true")
+	}
+
+	// T8b.2: all enabled modules set to read-only → write disabled.
+	// Navigate to each RW module and press 'r' once (RW→Read).
+	mRO := m
+	for i := 0; i < len(m.Modules()); i++ {
+		if m.Modules()[i].Enabled && m.Modules()[i].Access == tui.AccessReadWrite {
+			for mRO.Cursor() != i {
+				mRO = pressKey(mRO, tea.KeyDown)
+			}
+			mRO = pressRune(mRO, 'r')
+		}
+	}
+	if mRO.WriteEnabled() {
+		t.Error("T8b.2: all-read-only state should have WriteEnabled()=false")
+	}
+
+	// T8b.3: view surfaces the write guard line when write enabled
+	out := m.View()
+	if !strings.Contains(out, "ENABLE_WRITE=true") {
+		t.Errorf("T8b.3: modules view should show ENABLE_WRITE=true when write enabled, got:\n%s", out)
+	}
+}
+
+// --- T8c: Claude plugin registration option ---
+
+func TestClaudePluginRegOption(t *testing.T) {
+	m := advanceToRegister(tui.NewModel())
+
+	// The register screen must offer the Claude Code Plugin target.
+	found := false
+	for _, opt := range m.RegOpts() {
+		if opt.Client == "claude-plugin" {
+			found = true
+			// Default scope is global (auto-loads in every project).
+			if opt.Scope != tui.ScopeGlobal {
+				t.Errorf("claude-plugin default scope: got %v, want ScopeGlobal", opt.Scope)
+			}
+			// Not global-only — it must be toggleable to local.
+			if opt.GlobalOnly {
+				t.Error("claude-plugin should support local scope (GlobalOnly must be false)")
+			}
+		}
+	}
+	if !found {
+		t.Error("register screen is missing the 'claude-plugin' option")
+	}
+
+	// The label should be visible in the rendered view.
+	if !strings.Contains(m.View(), "Claude Code Plugin") {
+		t.Error("register view should list 'Claude Code Plugin'")
+	}
+}
+
 // --- T9: Quit ---
 
 func TestQuit(t *testing.T) {

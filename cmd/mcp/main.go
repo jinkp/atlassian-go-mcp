@@ -6,6 +6,7 @@
 //	atlassian-mcp mcp                            # Start the stdio MCP server
 //	atlassian-mcp setup opencode [--scope local] # Register into OpenCode config
 //	atlassian-mcp setup claude   [--scope local] # Register into Claude Code config
+//	atlassian-mcp setup claude-plugin [--write]  # Generate a Claude Code plugin (skills-dir)
 //	atlassian-mcp setup claude-desktop           # Register into Claude Desktop config
 //	atlassian-mcp setup cursor   [--scope local] # Register into Cursor config
 //	atlassian-mcp tui                            # Interactive TUI to configure modules
@@ -36,6 +37,7 @@ import (
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/teams"
 	"github.com/jinkp/atlassian-go-mcp/internal/claude"
 	"github.com/jinkp/atlassian-go-mcp/internal/claudedesktop"
+	"github.com/jinkp/atlassian-go-mcp/internal/claudeplugin"
 	"github.com/jinkp/atlassian-go-mcp/internal/cursor"
 	"github.com/jinkp/atlassian-go-mcp/internal/envstore"
 	mcpserver "github.com/jinkp/atlassian-go-mcp/internal/mcp"
@@ -140,6 +142,8 @@ func removeFromClient(client, configPath string) (bool, error) {
 		return opencode.RemoveFrom(configPath)
 	case "claude":
 		return claude.RemoveFrom(configPath)
+	case "claude-plugin":
+		return claudeplugin.Remove(configPath)
 	case "claude-desktop":
 		return claudedesktop.RemoveFrom(configPath)
 	case "cursor":
@@ -253,9 +257,80 @@ func newSetupCommand() *cobra.Command {
 	}
 	setup.AddCommand(newSetupOpenCodeCommand())
 	setup.AddCommand(newSetupClaudeCommand())
+	setup.AddCommand(newSetupClaudePluginCommand())
 	setup.AddCommand(newSetupClaudeDesktopCommand())
 	setup.AddCommand(newSetupCursorCommand())
 	return setup
+}
+
+// newSetupClaudePluginCommand returns the `setup claude-plugin` command that
+// generates a self-contained Claude Code plugin bundling the MCP server, instead
+// of editing ~/.claude.json directly. Claude Code auto-loads it as a
+// skills-directory plugin ("atlassian-mcp@skills-dir") on the next session.
+func newSetupClaudePluginCommand() *cobra.Command {
+	var scope string
+	var remove bool
+	var enable string
+	var write bool
+	cmd := &cobra.Command{
+		Use:   "claude-plugin",
+		Short: "Generate a Claude Code plugin that bundles the MCP server",
+		Long: `Generate a self-contained Claude Code plugin (instead of editing ~/.claude.json).
+
+  Global (default): ~/.claude/skills/atlassian-mcp/   (auto-loads in every project)
+  Local:            ./.claude/skills/atlassian-mcp/    (current repo; needs trust dialog)
+
+The plugin contains .claude-plugin/plugin.json and .mcp.json. Claude Code loads it
+as "atlassian-mcp@skills-dir" on the next session — no marketplace, no install step.
+Run /reload-plugins after changes. Credentials are still read at runtime from the
+shared ~/.atlassian/credentials.env; they are NOT baked into the plugin.
+
+Pass --write to enable write tools (adds ENABLE_WRITE=true to the plugin .mcp.json).
+Pass --remove to delete the generated plugin.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dir := claudeplugin.GlobalDir()
+			if scope == "local" {
+				dir = claudeplugin.LocalDir()
+			}
+
+			if remove {
+				removed, err := claudeplugin.Remove(dir)
+				if err != nil {
+					return fmt.Errorf("removing Claude plugin: %w", err)
+				}
+				reportRemoval("claude-plugin", scope, dir, removed)
+				return nil
+			}
+
+			mcpArgs := []string{"mcp"}
+			if enable != "" {
+				mcpArgs = append(mcpArgs, "--enable", enable)
+			}
+			var env map[string]string
+			if write {
+				env = map[string]string{"ENABLE_WRITE": "true"}
+			}
+
+			if err := claudeplugin.SaveWithArgsEnv(dir, version, mcpArgs, env); err != nil {
+				return fmt.Errorf("generating Claude plugin: %w", err)
+			}
+			fmt.Fprintf(os.Stdout, "Generated Claude plugin at %s\n", dir)
+			if write {
+				fmt.Fprintln(os.Stdout, "  write tools: ENABLE_WRITE=true")
+			} else {
+				fmt.Fprintln(os.Stdout, "  read-only (pass --write to enable write tools)")
+			}
+			fmt.Fprintln(os.Stdout, "  Claude Code loads it as \"atlassian-mcp@skills-dir\" on the next session.")
+			fmt.Fprintln(os.Stdout, "  Already running? Run /reload-plugins to pick it up.")
+			saveSetupToEngram(setupRecord{Client: "claude-plugin", Scope: scope, ConfigPath: dir, Args: mcpArgs, Timestamp: time.Now()})
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&scope, "scope", "global", "Where to generate: global (~/.claude/skills) or local (current repo)")
+	cmd.Flags().BoolVar(&remove, "remove", false, "Delete the generated plugin instead of creating it")
+	cmd.Flags().StringVar(&enable, "enable", "", "Modules to enable (e.g. jira,agile). Omit for the default lean profile.")
+	cmd.Flags().BoolVar(&write, "write", false, "Enable write tools (adds ENABLE_WRITE=true to the plugin)")
+	return cmd
 }
 
 func newSetupOpenCodeCommand() *cobra.Command {
@@ -462,7 +537,7 @@ func newUninstallCommand() *cobra.Command {
 		Use:   "uninstall",
 		Short: "Unregister the connector from all configured AI clients",
 		Long: `Unregister atlassian-mcp from every AI client recorded in
-~/.mcp/atlassian/setup-history.json (OpenCode, Claude Code, Claude Desktop, Cursor).
+~/.mcp/atlassian/setup-history.json (OpenCode, Claude Code, Claude Plugin, Claude Desktop, Cursor).
 
 The shared credentials file (~/.atlassian/credentials.env) is NEVER deleted — it is
 shared with other Atlassian tooling (e.g. bbk). Binaries and the PATH entry are not

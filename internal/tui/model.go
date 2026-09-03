@@ -111,6 +111,7 @@ var defaultModules = []ModuleConfig{
 var defaultRegOpts = []RegOption{
 	{Label: "OpenCode", Client: "opencode", Scope: ScopeGlobal},
 	{Label: "Claude Code (CLI)", Client: "claude", Scope: ScopeGlobal},
+	{Label: "Claude Code Plugin", Client: "claude-plugin", Scope: ScopeGlobal},
 	{Label: "Claude Desktop", Client: "claude-desktop", Scope: ScopeGlobal, GlobalOnly: true},
 	{Label: "Cursor", Client: "cursor", Scope: ScopeGlobal},
 	{Label: "All (OpenCode + Claude Desktop + Cursor)", Client: "all", Scope: ScopeGlobal},
@@ -176,6 +177,18 @@ func (m Model) buildPreview() string {
 		return "all"
 	}
 	return strings.Join(parts, ",")
+}
+
+// WriteEnabled reports whether at least one enabled module has read+write access.
+// When true, the generated client config must include ENABLE_WRITE=true so write
+// tools pass the runtime guard (internal/mcp/server.go WriteGuardCheck).
+func (m Model) WriteEnabled() bool {
+	for _, mod := range m.modules {
+		if mod.Enabled && mod.Access == AccessReadWrite {
+			return true
+		}
+	}
+	return false
 }
 
 // currentCreds assembles Atlassian (Jira) Credentials from the credFields state.

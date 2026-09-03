@@ -36,11 +36,17 @@ func SaveLocal(entry MCPEntry) error {
 
 // SaveWithArgsLocal writes with custom args to the local project config.
 func SaveWithArgsLocal(args []string) error {
+	return SaveWithArgsEnvLocal(args, nil)
+}
+
+// SaveWithArgsEnvLocal writes with custom args and environment variables
+// (e.g. env{"ENABLE_WRITE":"true"}) to the local project config.
+func SaveWithArgsEnvLocal(args []string, env map[string]string) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolving binary path: %w", err)
 	}
-	return SaveLocal(MCPEntry{Command: exe, Args: args})
+	return SaveLocal(MCPEntry{Command: exe, Args: args, Env: env})
 }
 
 // Save writes entry under mcpServers.atlassian in the GlobalPath() file,
@@ -147,11 +153,17 @@ func patchMCPServers(configPath string, _ []byte, entry MCPEntry) error {
 // SaveWithArgs writes the MCP entry with custom args (e.g. ["mcp", "--enable", "jira"]).
 // It resolves the current binary path automatically.
 func SaveWithArgs(args []string) error {
+	return SaveWithArgsEnv(args, nil)
+}
+
+// SaveWithArgsEnv writes the MCP entry with custom args and environment variables
+// (e.g. env{"ENABLE_WRITE":"true"}). It resolves the current binary path automatically.
+func SaveWithArgsEnv(args []string, env map[string]string) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolving binary path: %w", err)
 	}
-	return Save(MCPEntry{Command: exe, Args: args})
+	return Save(MCPEntry{Command: exe, Args: args, Env: env})
 }
 
 // serverName is the MCP entry key this tool registers under.
