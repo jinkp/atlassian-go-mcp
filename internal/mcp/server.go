@@ -275,6 +275,10 @@ func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc 
 					"priority",
 					mcp.Description("New priority name"),
 				),
+				mcp.WithString(
+					"custom_fields",
+					mcp.Description("JSON object of custom fields to set, e.g. '{\"customfield_10001\": \"value\", \"customfield_10002\": 42}'"),
+				),
 			),
 			ToolUpdateJiraIssue(svc, log),
 		)

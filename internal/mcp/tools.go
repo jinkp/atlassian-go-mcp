@@ -29,14 +29,15 @@ func splitCSV(s string) []string {
 // issueJSON is the snake_case JSON representation of a jira.Issue.
 // Ensures empty labels serialize as [] not null.
 type issueJSON struct {
-	Key      string   `json:"key"`
-	Summary  string   `json:"summary"`
-	Status   string   `json:"status"`
-	Assignee string   `json:"assignee"`
-	Priority string   `json:"priority"`
-	Labels   []string `json:"labels"`
-	Created  string   `json:"created,omitempty"`
-	Updated  string   `json:"updated,omitempty"`
+	Key          string                 `json:"key"`
+	Summary      string                 `json:"summary"`
+	Status       string                 `json:"status"`
+	Assignee     string                 `json:"assignee"`
+	Priority     string                 `json:"priority"`
+	Labels       []string               `json:"labels"`
+	Created      string                 `json:"created,omitempty"`
+	Updated      string                 `json:"updated,omitempty"`
+	CustomFields map[string]interface{} `json:"custom_fields,omitempty"`
 }
 
 func toIssueJSON(issue *jira.Issue) issueJSON {
@@ -53,14 +54,15 @@ func toIssueJSON(issue *jira.Issue) issueJSON {
 		updated = issue.Updated.Format("2006-01-02T15:04:05Z07:00")
 	}
 	return issueJSON{
-		Key:      issue.Key,
-		Summary:  issue.Summary,
-		Status:   issue.Status,
-		Assignee: issue.Assignee,
-		Priority: issue.Priority,
-		Labels:   labels,
-		Created:  created,
-		Updated:  updated,
+		Key:          issue.Key,
+		Summary:      issue.Summary,
+		Status:       issue.Status,
+		Assignee:     issue.Assignee,
+		Priority:     issue.Priority,
+		Labels:       labels,
+		Created:      created,
+		Updated:      updated,
+		CustomFields: issue.CustomFields,
 	}
 }
 
@@ -184,6 +186,13 @@ func ToolUpdateJiraIssue(svc jira.Service, log audit.Logger) server.ToolHandlerF
 		}
 		if p := mcp.ParseString(req, "priority", ""); p != "" {
 			updateReq.PriorityName = &p
+		}
+		if cf := mcp.ParseString(req, "custom_fields", ""); cf != "" {
+			var parsed map[string]interface{}
+			if jsonErr := json.Unmarshal([]byte(cf), &parsed); jsonErr != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("custom_fields must be valid JSON object: %v", jsonErr)), nil
+			}
+			updateReq.CustomFields = parsed
 		}
 
 		svcErr := svc.UpdateIssue(ctx, issueKey, updateReq)

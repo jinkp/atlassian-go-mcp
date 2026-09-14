@@ -176,6 +176,9 @@ func (s *JiraService) UpdateIssue(ctx context.Context, key string, req UpdateIss
 	if req.PriorityName != nil {
 		fields["priority"] = map[string]interface{}{"name": *req.PriorityName}
 	}
+	for k, v := range req.CustomFields {
+		fields[k] = v
+	}
 
 	apiReq := updateIssueAPIRequest{Fields: fields}
 	body, err := json.Marshal(apiReq)
@@ -670,7 +673,7 @@ func (s *JiraService) SearchIssues(ctx context.Context, jql string, maxResults i
 	params := url.Values{}
 	params.Set("jql", jql)
 	params.Set("maxResults", strconv.Itoa(maxResults))
-	params.Set("fields", "summary,status,assignee,priority,issuetype,created,updated,description,project,labels")
+	params.Set("fields", "*all")
 
 	fullURL := endpoint + "?" + params.Encode()
 

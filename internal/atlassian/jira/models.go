@@ -2,7 +2,9 @@
 package jira
 
 import (
+	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -40,6 +42,10 @@ type Issue struct {
 	Labels    []string
 	Created   time.Time
 	Updated   time.Time
+	// CustomFields holds any customfield_* values returned by the Jira API.
+	// Keys are the raw field IDs (e.g. "customfield_10001"). Values are
+	// unprocessed — the caller interprets them based on field type.
+	CustomFields map[string]interface{}
 }
 
 // SearchResult holds a page of Jira search results.
@@ -73,6 +79,41 @@ type issueFieldsJSON struct {
 	Labels    []string      `json:"labels"`
 	Created   string        `json:"created"`
 	Updated   string        `json:"updated"`
+	// CustomFields holds raw customfield_* values extracted during unmarshaling.
+	CustomFields map[string]interface{} `json:"-"`
+}
+
+// UnmarshalJSON decodes the known fields via standard struct tags, then
+// extracts any key starting with "customfield_" into CustomFields.
+func (f *issueFieldsJSON) UnmarshalJSON(data []byte) error {
+	// Alias avoids infinite recursion on UnmarshalJSON.
+	type alias issueFieldsJSON
+	var a alias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return err
+	}
+	*f = issueFieldsJSON(a)
+
+	// Second pass: decode all keys to find customfield_* entries.
+	var all map[string]json.RawMessage
+	if err := json.Unmarshal(data, &all); err != nil {
+		return err
+	}
+	for key, raw := range all {
+		if strings.HasPrefix(key, "customfield_") {
+			if f.CustomFields == nil {
+				f.CustomFields = make(map[string]interface{})
+			}
+			var val interface{}
+			if err := json.Unmarshal(raw, &val); err != nil {
+				// Store the raw string if we can't decode it.
+				f.CustomFields[key] = string(raw)
+				continue
+			}
+			f.CustomFields[key] = val
+		}
+	}
+	return nil
 }
 
 type statusJSON struct {
@@ -94,12 +135,13 @@ type priorityJSON struct {
 // ToIssue converts the raw API response into the domain Issue model.
 func (r IssueAPIResponse) ToIssue() Issue {
 	issue := Issue{
-		Key:       r.Key,
-		Summary:   r.Fields.Summary,
-		Status:    r.Fields.Status.Name,
-		IssueType: r.Fields.IssueType.Name,
-		Priority:  r.Fields.Priority.Name,
-		Labels:    r.Fields.Labels,
+		Key:          r.Key,
+		Summary:      r.Fields.Summary,
+		Status:       r.Fields.Status.Name,
+		IssueType:    r.Fields.IssueType.Name,
+		Priority:     r.Fields.Priority.Name,
+		Labels:       r.Fields.Labels,
+		CustomFields: r.Fields.CustomFields,
 	}
 	if r.Fields.Labels == nil {
 		issue.Labels = []string{}
@@ -387,6 +429,12 @@ type UpdateIssueRequest struct {
 	Description  *string // nil = do not send; non-nil = wrap to ADF
 	AssigneeID   *string // nil = do not send
 	PriorityName *string // nil = do not send
+	// CustomFields holds arbitrary customfield_* values to set.
+	// Keys must be the raw field ID (e.g. "customfield_10001").
+	// Values are sent as-is to the Jira API — the caller is responsible
+	// for matching the expected type (string, number, object, etc.).
+	// nil map means "do not send any custom fields".
+	CustomFields map[string]interface{}
 }
 
 // Transition represents a single workflow transition available on a Jira issue.
