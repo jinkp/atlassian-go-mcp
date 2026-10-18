@@ -1159,6 +1159,16 @@ func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc 
 			),
 			ToolBitbucketListPipelines(bitbucketSvc),
 		)
+
+		s.AddTool(
+			mcp.NewTool("bb_get_file",
+				mcp.WithDescription("Get the raw content of a file at a given branch, tag, or commit in a Bitbucket repository"),
+				wsDesc, repoDesc,
+				mcp.WithString("revision", mcp.Required(), mcp.Description("Branch name, tag, or commit hash")),
+				mcp.WithString("path", mcp.Required(), mcp.Description("Repository-relative file path, e.g. src/main.go")),
+			),
+			ToolBitbucketGetFile(bitbucketSvc),
+		)
 	}
 
 	// --- BITBUCKET WRITE (6 tools) ---

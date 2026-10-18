@@ -399,6 +399,9 @@ func (m *mockServerBitbucketService) StaleBranches(_ context.Context, _, _ strin
 func (m *mockServerBitbucketService) ListPipelines(_ context.Context, _, _ string) ([]bitbucket.Pipeline, error) {
 	return []bitbucket.Pipeline{}, nil
 }
+func (m *mockServerBitbucketService) GetFileContent(_ context.Context, _, _, _, _ string) (string, error) {
+	return "", nil
+}
 func (m *mockServerBitbucketService) CreatePullRequest(_ context.Context, _, _ string, _ bitbucket.CreatePRRequest) (*bitbucket.PullRequest, error) {
 	return &bitbucket.PullRequest{}, nil
 }

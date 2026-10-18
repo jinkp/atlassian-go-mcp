@@ -269,3 +269,26 @@ func ToolBitbucketListPipelines(svc bitbucket.BitbucketService) server.ToolHandl
 		return bitbucketJSON(pipelines)
 	}
 }
+
+// ToolBitbucketGetFile returns the raw content of a file at a given revision.
+func ToolBitbucketGetFile(svc bitbucket.BitbucketService) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		ws, repo, err := resolveBitbucketWorkspaceRepo(req)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		revision := strings.TrimSpace(mcp.ParseString(req, "revision", ""))
+		if revision == "" {
+			return mcp.NewToolResultError("revision is required (branch name, tag, or commit hash)"), nil
+		}
+		filePath := strings.TrimSpace(mcp.ParseString(req, "path", ""))
+		if filePath == "" {
+			return mcp.NewToolResultError("path is required (repository-relative file path)"), nil
+		}
+		content, svcErr := svc.GetFileContent(ctx, ws, repo, revision, filePath)
+		if svcErr != nil {
+			return mcp.NewToolResultError(svcErr.Error()), nil
+		}
+		return mcp.NewToolResultText(content), nil
+	}
+}

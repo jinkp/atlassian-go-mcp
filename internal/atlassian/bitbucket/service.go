@@ -44,6 +44,7 @@ type BitbucketService interface {
 	ListBranches(ctx context.Context, workspace, repo string) ([]Branch, error)
 	StaleBranches(ctx context.Context, workspace, repo string, days int) ([]Branch, error)
 	ListPipelines(ctx context.Context, workspace, repo string) ([]Pipeline, error)
+	GetFileContent(ctx context.Context, workspace, repo, revision, filePath string) (string, error)
 
 	// write operations
 	CreatePullRequest(ctx context.Context, workspace, repo string, req CreatePRRequest) (*PullRequest, error)
@@ -273,6 +274,15 @@ func (s *BitbucketCloudService) ListPipelines(ctx context.Context, workspace, re
 	q.Set("sort", "-created_on")
 	q.Set("pagelen", "20")
 	return paginate[Pipeline](ctx, s, fmt.Sprintf("/repositories/%s/%s/pipelines/?%s", workspace, repo, q.Encode()))
+}
+
+// GetFileContent returns the raw content of a file at the given revision (branch, tag, or commit hash).
+// filePath is the repository-relative path, e.g. "src/main.go" or "pkg/util/helper.go".
+// Forward slashes in the path are preserved as URL path separators to match the
+// Bitbucket /src/{revision}/{path} endpoint semantics.
+func (s *BitbucketCloudService) GetFileContent(ctx context.Context, workspace, repo, revision, filePath string) (string, error) {
+	filePath = strings.TrimPrefix(filePath, "/")
+	return s.getText(ctx, fmt.Sprintf("/repositories/%s/%s/src/%s/%s", workspace, repo, revision, filePath))
 }
 
 // --- write operations ---

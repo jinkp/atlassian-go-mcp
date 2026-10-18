@@ -57,6 +57,9 @@ func (m *mockBitbucketService) StaleBranches(context.Context, string, string, in
 func (m *mockBitbucketService) ListPipelines(context.Context, string, string) ([]bitbucket.Pipeline, error) {
 	return nil, nil
 }
+func (m *mockBitbucketService) GetFileContent(context.Context, string, string, string, string) (string, error) {
+	return "", nil
+}
 func (m *mockBitbucketService) CreatePullRequest(ctx context.Context, ws, repo string, req bitbucket.CreatePRRequest) (*bitbucket.PullRequest, error) {
 	return m.createPRFn(ctx, ws, repo, req)
 }

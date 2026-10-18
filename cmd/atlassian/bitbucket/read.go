@@ -197,6 +197,28 @@ func newPRReviewersCmd(svc bitbucket.BitbucketService) *cobra.Command {
 		})
 }
 
+// newFileGetCmd prints the raw content of a file at a given revision.
+func newFileGetCmd(svc bitbucket.BitbucketService) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "file <revision> <path>",
+		Short: "Get the raw content of a file at a given revision (branch, tag, or commit)",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ws, repo, err := resolveWorkspaceRepo(cmd)
+			if err != nil {
+				fail(err)
+			}
+			content, err := svc.GetFileContent(context.Background(), ws, repo, args[0], args[1])
+			if err != nil {
+				fail(err)
+			}
+			fmt.Fprint(cmd.OutOrStdout(), content)
+			return nil
+		},
+	}
+	return cmd
+}
+
 // newPRDiffCmd prints the raw unified diff (text, not table/json).
 func newPRDiffCmd(svc bitbucket.BitbucketService) *cobra.Command {
 	cmd := &cobra.Command{

@@ -52,6 +52,9 @@ func (m *mockBB) StaleBranches(context.Context, string, string, int) ([]bbsvc.Br
 func (m *mockBB) ListPipelines(context.Context, string, string) ([]bbsvc.Pipeline, error) {
 	return nil, nil
 }
+func (m *mockBB) GetFileContent(context.Context, string, string, string, string) (string, error) {
+	return "", nil
+}
 func (m *mockBB) CreatePullRequest(ctx context.Context, ws, repo string, req bbsvc.CreatePRRequest) (*bbsvc.PullRequest, error) {
 	return m.createPRFn(ctx, ws, repo, req)
 }

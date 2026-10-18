@@ -32,6 +32,7 @@ func RegisterCommands(root *cobra.Command, svc bitbucket.BitbucketService, audit
 	root.AddCommand(newReposCmd(svc))
 	root.AddCommand(newBranchesCmd(svc))
 	root.AddCommand(newStaleBranchesCmd(svc))
+	root.AddCommand(newFileGetCmd(svc))
 
 	pipeline := &cobra.Command{
 		Use:   "pipeline",
