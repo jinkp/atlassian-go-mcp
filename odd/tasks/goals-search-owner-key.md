@@ -65,7 +65,7 @@ Also available and unused, deliberately deferred: `goals_goalTypes(containerId)`
 | --- | --- | --- | --- | --- |
 | T1 | S1 | inline | done | RED observed (missing `Key`/`ScanIncomplete`/`maxFilterScanPages`, then 3 failing CLI behaviours) → GREEN. `go test ./...` all packages ok, `go vet ./...` clean. Live differential check vs `main` recorded in L4. Risk: none. |
 | T2 | S2 | inline | done | RED observed (missing `GoalsByOwnerRequest`/`GetGoalsByOwner`, then the MCP/CLI behaviours) → GREEN. `go test ./...` all packages ok, `go vet ./...` clean. Live verification recorded in L7. Risk: none. |
-| T3 | S3 | inline | pending | — |
+| T3 | S3 | inline | done | RED observed (missing `GetGoalByKey`, then the routing behaviours) → GREEN. `go test ./...` all packages ok, `go vet ./...` clean. Live verification recorded in L10. Risk: none. |
 
 Routing rationale: all three tasks edit `internal/atlassian/goals/service.go`, `internal/atlassian/goals/models.go` and `README.md`. The edit surfaces are NOT disjoint, so the Writer trigger does not apply and parallel writers are unsafe. The parent writes inline, sequentially, one work-unit commit per task.
 
@@ -134,4 +134,24 @@ No REST handler was added. `internal/api` already omits the goal metrics endpoin
 
 `Risk: none`. New method, new CLI command, new MCP tool: all additive. `GoalsService` gained a method, which is an internal interface with all five implementors updated in the same commit, not a published contract. No existing command's behaviour changed; the tool-count test updates are mechanical consequences of registering one new tool. No migration, credential, concurrency or delivery surface is touched, and the new code is covered by service, MCP and CLI tests plus live verification.
 
-Next step: T3, key-based lookup via `goals_byKey`.
+### L10 — T3 evidence: key lookup verified live (2026-10-29)
+
+- `goals get ZQEAYBZU-987 --site-id <site> -o json` returns the goal, exit 0.
+- The key form and the ARI form of the same goal produce byte-identical output.
+- An unknown key exits 3 with `goals: no goal with key "ZQEAYBZU-99999" in site "<site>": issue not found`.
+- A key with no `--site-id` exits 1 and explains that the argument was read as a key and a site is required, instead of attempting a doomed lookup.
+
+Routing is by identifier shape: anything not prefixed `ari:` is a key. The ARI path is untouched, verified by the identical-output check above.
+
+Two findings handled along the way:
+
+- The API reports an unknown key as a GraphQL error with `extensions.statusCode: 404` and the prose message `Exception while fetching data (/goals_byKey) : Goal with key X does not exist for <cloudId>`, not as a null payload. `graphQLError` gained an `Extensions.StatusCode` field and a dedicated `firstGraphQLErrorIsNotFound` helper, so only this call maps 404 to not-found and no other method's error reporting changes. A test asserts that errors without extensions still surface their message, since that is the shape every other call sees.
+- The shared `jira.ErrNotFound` renders as "issue not found", which is wrong for a goal and names nothing. The error is wrapped so `errors.Is` and the exit code 3 still hold while the message identifies the key and the site.
+
+`get_goal`'s `goal_id` went from required to optional in the MCP schema, which is a relaxation: existing callers that send `goal_id` behave exactly as before, and `goal_id` wins when both identifiers are supplied. A test pins that precedence.
+
+### L11 — Risk assessment for T3 (2026-10-29)
+
+`Risk: none`. `GetGoalByKey`, the `--site-id` flag on `goals get`, and the `goal_key`/`site_id` arguments on `get_goal` are all additions. Relaxing a required MCP argument to optional cannot break a caller that was already supplying it. `graphQLError` gained a field, which is additive, and the new 404 mapping is reachable only from `GetGoalByKey`; a regression test covers the extension-less error shape all other methods rely on. The one behaviour change to an existing command is that `goals get` now accepts a non-ARI argument where it previously would have sent it to the ARI endpoint and failed — strictly more inputs accepted, none removed.
+
+Feature complete: S1, S2 and S3 are all done and verified live. S4 remains deliberately out of scope.

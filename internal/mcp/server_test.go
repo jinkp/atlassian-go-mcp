@@ -275,6 +275,10 @@ func (m *mockServerGoalsService) SearchGoals(ctx context.Context, req goals.Sear
 	return &goals.GoalSearchResult{Goals: []goals.Goal{}}, nil
 }
 
+func (m *mockServerGoalsService) GetGoalByKey(ctx context.Context, siteID, goalKey string) (*goals.Goal, error) {
+	return &goals.Goal{}, nil
+}
+
 func (m *mockServerGoalsService) GetGoalsByOwner(ctx context.Context, req goals.GoalsByOwnerRequest) (*goals.GoalSearchResult, error) {
 	return &goals.GoalSearchResult{Goals: []goals.Goal{}}, nil
 }

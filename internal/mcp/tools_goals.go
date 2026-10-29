@@ -82,16 +82,33 @@ func ToolGetSiteID(goalsSvc goals.GoalsService) server.ToolHandlerFunc {
 	}
 }
 
-// ToolGetGoal returns an MCP tool handler that fetches a single goal by ARI.
-// Required: goal_id. Returns Goal JSON.
+// ToolGetGoal returns an MCP tool handler that fetches a single goal.
+// Either goal_id (an ARI) or goal_key plus site_id. Returns Goal JSON.
+//
+// goal_id used to be the only way in, which forced callers to carry a ~90
+// character ARI around. A key lookup needs a site because keys are only unique
+// within one.
 func ToolGetGoal(goalsSvc goals.GoalsService) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		goalID := mcp.ParseString(req, "goal_id", "")
-		if goalID == "" {
-			return mcp.NewToolResultError("goal_id is required"), nil
+		goalKey := mcp.ParseString(req, "goal_key", "")
+		siteID := mcp.ParseString(req, "site_id", "")
+
+		var (
+			goal   *goals.Goal
+			svcErr error
+		)
+		switch {
+		case goalID != "":
+			goal, svcErr = goalsSvc.GetGoal(ctx, goalID)
+		case goalKey != "" && siteID != "":
+			goal, svcErr = goalsSvc.GetGoalByKey(ctx, siteID, goalKey)
+		case goalKey != "":
+			return mcp.NewToolResultError("site_id is required when looking a goal up by goal_key"), nil
+		default:
+			return mcp.NewToolResultError("either goal_id (an ARI) or goal_key plus site_id is required"), nil
 		}
 
-		goal, svcErr := goalsSvc.GetGoal(ctx, goalID)
 		if svcErr != nil {
 			return mcp.NewToolResultError(svcErr.Error()), nil
 		}

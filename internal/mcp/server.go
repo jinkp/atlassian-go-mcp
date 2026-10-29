@@ -552,11 +552,18 @@ func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc 
 		s.AddTool(
 			mcp.NewTool(
 				"get_goal",
-				mcp.WithDescription("Get an Atlassian Goal by its ARI"),
+				mcp.WithDescription("Get an Atlassian Goal by its ARI, or by its short key plus a site_id. Supply either goal_id, or goal_key together with site_id."),
 				mcp.WithString(
 					"goal_id",
-					mcp.Required(),
-					mcp.Description("Goal ARI, e.g. ari:cloud:townsquare:{siteId}:goal/{uuid}"),
+					mcp.Description("Goal ARI, e.g. ari:cloud:townsquare:{siteId}:goal/{uuid}. Takes precedence over goal_key when both are given"),
+				),
+				mcp.WithString(
+					"goal_key",
+					mcp.Description("Short goal key as shown in the Goals UI, e.g. 'ZQEAYBZU-633'. Requires site_id, because a key is only unique within a site"),
+				),
+				mcp.WithString(
+					"site_id",
+					mcp.Description("cloudId from get_site_id. Required only with goal_key"),
 				),
 			),
 			ToolGetGoal(goalsSvc),

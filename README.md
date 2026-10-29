@@ -235,7 +235,9 @@ atlassian agile move-to-epic --epic-key PROJ-100 --issues "PROJ-1,PROJ-2"
 atlassian goals site-id --subdomain myorg
 
 # Read
+# By ARI, or by the short key the Goals UI shows (keys need --site-id).
 atlassian goals get "ari:cloud:townsquare:abc:goal/xyz"
+atlassian goals get ZQEAYBZU-633 --site-id <cloudId>
 atlassian goals search --site-id <cloudId> [--query "Analytics"] [--max-results 25] [--cursor <next_cursor>]
 
 # All goals owned by one person — server-side filter.
@@ -385,7 +387,7 @@ ENABLE_WRITE=true ./atlassian-mcp mcp
 | Tool | Args | Description |
 |------|------|-------------|
 | `get_site_id` | `subdomain` (req, e.g. `myorg`) | Get Atlassian cloud ID |
-| `get_goal` | `goal_id` (req, ARI) | Get goal by ID |
+| `get_goal` | either `goal_id` (ARI) **or** `goal_key` + `site_id` | Get goal by ARI or by short key |
 | `search_goals` | `site_id` (req), `search_string` (opt), `max_results` (opt), `cursor` (opt) | List goals; `search_string` is a text match on name/key, **not** JQL. May return `scan_incomplete` |
 | `get_goals_by_owner` | `site_id`, `owner_id` (req); `max_results`, `cursor` (opt) | List one person's goals. Filters server-side |
 | `get_goal_metrics` | `goal_id` (req) | List metric targets for a goal |

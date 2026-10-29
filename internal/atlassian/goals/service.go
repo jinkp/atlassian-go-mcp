@@ -32,6 +32,7 @@ const (
 type GoalsService interface {
 	GetSiteID(ctx context.Context, subdomain string) (string, error)
 	GetGoal(ctx context.Context, goalID string) (*Goal, error)
+	GetGoalByKey(ctx context.Context, siteID, goalKey string) (*Goal, error)
 	SearchGoals(ctx context.Context, req SearchGoalsRequest) (*GoalSearchResult, error)
 	GetGoalsByOwner(ctx context.Context, req GoalsByOwnerRequest) (*GoalSearchResult, error)
 	UpdateGoalStatus(ctx context.Context, req UpdateGoalStatusRequest) error
@@ -154,6 +155,70 @@ func (s *GoalsGraphQLService) GetGoal(ctx context.Context, goalID string) (*Goal
 		return nil, jira.ErrNotFound
 	}
 	g := data.GoalsByID.toGoal()
+	return &g, nil
+}
+
+// GetGoalByKey fetches a goal by its short, human-readable key, e.g.
+// "ZQEAYBZU-633", which is what the Goals UI shows and what people quote to
+// each other. The ARI-based GetGoal remains available and unchanged.
+//
+// A key is only unique within a site, so siteID is required.
+func (s *GoalsGraphQLService) GetGoalByKey(ctx context.Context, siteID, goalKey string) (*Goal, error) {
+	siteID = strings.TrimSpace(siteID)
+	if siteID == "" {
+		return nil, fmt.Errorf("goals: site id is required to look a goal up by key")
+	}
+	goalKey = strings.TrimSpace(goalKey)
+	if goalKey == "" {
+		return nil, fmt.Errorf("goals: goal key is required")
+	}
+
+	const query = `query GetGoalByKey($containerId: ID!, $goalKey: String!) {
+  goals_byKey(containerId: $containerId, goalKey: $goalKey) {
+    id key name startDate
+    targetDate { label }
+    status { value score }
+    owner { ... on AtlassianAccountUser { name accountId } }
+  }
+}`
+	variables := map[string]any{
+		"containerId": "ari:cloud:townsquare::site/" + siteID,
+		"goalKey":     goalKey,
+	}
+
+	envelope, err := s.doGraphQL(ctx, query, variables)
+	if err != nil {
+		return nil, err
+	}
+
+	// An unknown key is reported as a GraphQL error carrying statusCode 404
+	// and a prose message, not as a null payload. Passing that message through
+	// verbatim would bury an ordinary miss in gateway noise and would produce
+	// the wrong CLI exit code, so it becomes ErrNotFound like GetGoal's miss.
+	// Wrapped so errors.Is(err, jira.ErrNotFound) keeps working and the CLI
+	// still exits 3, while the message names what was actually missing —
+	// the shared sentinel alone reads "issue not found", which is wrong for a
+	// goal and tells the caller nothing about which key failed.
+	notFound := func() error {
+		return fmt.Errorf("goals: no goal with key %q in site %q: %w", goalKey, siteID, jira.ErrNotFound)
+	}
+
+	if firstGraphQLErrorIsNotFound(envelope.Errors) {
+		return nil, notFound()
+	}
+	if msg := firstGraphQLError(envelope.Errors); msg != "" {
+		return nil, fmt.Errorf("goals: GraphQL error: %s", msg)
+	}
+
+	var data goalsByKeyData
+	if err := json.Unmarshal(envelope.Data, &data); err != nil {
+		return nil, fmt.Errorf("goals: decoding goals_byKey: %w", err)
+	}
+	if data.GoalsByKey == nil {
+		return nil, notFound()
+	}
+
+	g := data.GoalsByKey.toGoal()
 	return &g, nil
 }
 

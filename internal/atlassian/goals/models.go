@@ -4,6 +4,7 @@ package goals
 
 import (
 	"encoding/json"
+	"net/http"
 )
 
 // Goal is the domain model for an Atlassian Goal.
@@ -108,6 +109,14 @@ type graphQLResponse struct {
 
 type graphQLError struct {
 	Message string `json:"message"`
+
+	// Extensions carries the gateway's structured detail. statusCode is the
+	// only reliable way to tell an expected miss from a real failure: an
+	// unknown goal key comes back as a GraphQL error with statusCode 404 and a
+	// prose message, not as a null payload.
+	Extensions struct {
+		StatusCode int `json:"statusCode"`
+	} `json:"extensions"`
 }
 
 // tenantContextsData is the shape of {"data":{"tenantContexts":[{"cloudId":"..."}]}}
@@ -120,6 +129,11 @@ type tenantContextsData struct {
 // goalsByIdData is the shape of {"data":{"goals_byId":{...}}}
 type goalsByIdData struct {
 	GoalsByID *goalAPIItem `json:"goals_byId"`
+}
+
+// goalsByKeyData is the shape of {"data":{"goals_byKey":{...}}}
+type goalsByKeyData struct {
+	GoalsByKey *goalAPIItem `json:"goals_byKey"`
 }
 
 // goalsSearchData is the shape of {"data":{"goals_search":{...}}}
@@ -312,6 +326,14 @@ func firstGraphQLError(errs []graphQLError) string {
 		return errs[0].Message
 	}
 	return ""
+}
+
+// firstGraphQLErrorIsNotFound reports whether the first error is a 404, which
+// the gateway uses for an expected miss such as an unknown goal key. Errors
+// without extensions decode as statusCode 0 and are therefore never treated as
+// a miss.
+func firstGraphQLErrorIsNotFound(errs []graphQLError) bool {
+	return len(errs) > 0 && errs[0].Extensions.StatusCode == http.StatusNotFound
 }
 
 // --- Domain models for Goal Metrics ---
