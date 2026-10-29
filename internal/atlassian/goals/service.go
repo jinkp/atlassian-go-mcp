@@ -33,6 +33,7 @@ type GoalsService interface {
 	GetSiteID(ctx context.Context, subdomain string) (string, error)
 	GetGoal(ctx context.Context, goalID string) (*Goal, error)
 	SearchGoals(ctx context.Context, req SearchGoalsRequest) (*GoalSearchResult, error)
+	GetGoalsByOwner(ctx context.Context, req GoalsByOwnerRequest) (*GoalSearchResult, error)
 	UpdateGoalStatus(ctx context.Context, req UpdateGoalStatusRequest) error
 	CreateGoal(ctx context.Context, req CreateGoalRequest) (*CreateGoalResult, error)
 	EditGoal(ctx context.Context, req EditGoalRequest) (*Goal, error)
@@ -239,6 +240,94 @@ func (s *GoalsGraphQLService) SearchGoals(ctx context.Context, req SearchGoalsRe
 		HasMore:        hasMore,
 		NextCursor:     resumeCursor,
 		ScanIncomplete: scanIncomplete,
+	}, nil
+}
+
+// GetGoalsByOwner lists the goals owned by one user, with cursor pagination.
+//
+// goals_search cannot do this: it takes no owner argument and no filter input.
+// The capability lives on the graph-store edge query instead, which carries
+// three requirements the API enforces and that are each pinned by a test:
+//
+//   - the field is experimental, so it needs @optIn(to: "GraphStoreAtlasGoalHasOwner").
+//     The directive is only accepted on the field; on the operation the gateway
+//     rejects it as MisplacedDirective.
+//   - a query context is mandatory. The queryContext argument is used rather
+//     than the X-Query-Context header so the shared HTTP client needs no
+//     per-call header plumbing.
+//   - the edge node is a union, so the goal fields need an inline fragment.
+func (s *GoalsGraphQLService) GetGoalsByOwner(ctx context.Context, req GoalsByOwnerRequest) (*GoalSearchResult, error) {
+	siteID := strings.TrimSpace(req.SiteID)
+	if siteID == "" {
+		return nil, fmt.Errorf("goals: site id is required to list goals by owner")
+	}
+	ownerID := strings.TrimSpace(req.OwnerID)
+	if ownerID == "" {
+		return nil, fmt.Errorf("goals: owner id is required to list goals by owner")
+	}
+	if !strings.HasPrefix(ownerID, "ari:") {
+		ownerID = "ari:cloud:identity::user/" + ownerID
+	}
+
+	maxResults := req.MaxResults
+	if maxResults <= 0 {
+		maxResults = defaultMaxResults
+	}
+
+	const query = `query GoalsByOwner($id: ID!, $first: Int, $after: String, $queryContext: String) {
+  graphStore_atlasGoalHasOwnerInverse(id: $id, first: $first, after: $after, queryContext: $queryContext) @optIn(to: "GraphStoreAtlasGoalHasOwner") {
+    edges {
+      node {
+        ... on TownsquareGoal {
+          id key name startDate
+          targetDate { label }
+          status { value score }
+          owner { ... on AtlassianAccountUser { name accountId } }
+        }
+      }
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}`
+	variables := map[string]any{
+		"id":           ownerID,
+		"first":        maxResults,
+		"queryContext": "ari:cloud:platform::site/" + siteID,
+	}
+	if req.Cursor != "" {
+		variables["after"] = req.Cursor
+	}
+
+	envelope, err := s.doGraphQL(ctx, query, variables)
+	if err != nil {
+		return nil, err
+	}
+	if msg := firstGraphQLError(envelope.Errors); msg != "" {
+		return nil, fmt.Errorf("goals: GraphQL error: %s", msg)
+	}
+
+	var data goalsByOwnerData
+	if err := json.Unmarshal(envelope.Data, &data); err != nil {
+		return nil, fmt.Errorf("goals: decoding graphStore_atlasGoalHasOwnerInverse: %w", err)
+	}
+
+	goalsList := make([]Goal, 0, len(data.Result.Edges))
+	for _, edge := range data.Result.Edges {
+		// A node that is not a goal decodes empty through the inline fragment.
+		// Returning a blank goal would be worse than leaving it out.
+		if edge.Node.ID == "" {
+			continue
+		}
+		goalsList = append(goalsList, edge.Node.toGoal())
+	}
+
+	return &GoalSearchResult{
+		Goals:      goalsList,
+		HasMore:    data.Result.PageInfo.HasNextPage,
+		NextCursor: data.Result.PageInfo.EndCursor,
 	}, nil
 }
 

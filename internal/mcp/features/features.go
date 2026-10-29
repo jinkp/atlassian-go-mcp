@@ -48,7 +48,7 @@ var allModules = []string{
 //             add_comment_to_issue, link_issues, add_worklog (6 write)
 // agile:      get_jira_boards, get_jira_sprints, get_active_sprint, get_sprint_issues (4 read)
 //             create_sprint, update_sprint, move_issues_to_sprint, move_issues_to_epic (4 write)
-// goals:      get_site_id, get_goal, search_goals (3 read)
+// goals:      get_site_id, get_goal, search_goals, get_goals_by_owner (4 read)
 //             update_goal_status, create_goal, edit_goal (3 write)
 // metrics:    get_goal_metrics (1 read)
 //             create_metric, update_metric_value, update_metric_target (3 write)
@@ -72,7 +72,7 @@ var allModules = []string{
 var moduleToolCounts = map[string][2]int{
 	ModuleJira:       {8, 6},
 	ModuleAgile:      {4, 4},
-	ModuleGoals:      {3, 3},
+	ModuleGoals:      {4, 3},
 	ModuleMetrics:    {1, 3},
 	ModuleReleases:   {5, 2},
 	ModuleProjects:   {3, 1},

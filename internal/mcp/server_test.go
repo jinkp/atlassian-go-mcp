@@ -165,7 +165,7 @@ func TestLogStartupDiagnostics(t *testing.T) {
 				"[atlassian-mcp] version:",
 				"[atlassian-mcp] modules: all modules enabled (rw)",
 				"[atlassian-mcp] write guard: enabled (ENABLE_WRITE=true)",
-				"[atlassian-mcp] tools: 79/79 registered",
+				"[atlassian-mcp] tools: 80/80 registered",
 			},
 		},
 		{
@@ -176,7 +176,7 @@ func TestLogStartupDiagnostics(t *testing.T) {
 				"[atlassian-mcp] version:",
 				"[atlassian-mcp] modules: jira(rw)",
 				"[atlassian-mcp] write guard: disabled (ENABLE_WRITE=)",
-				"[atlassian-mcp] tools: 14/79 registered",
+				"[atlassian-mcp] tools: 14/80 registered",
 			},
 		},
 		{
@@ -187,7 +187,7 @@ func TestLogStartupDiagnostics(t *testing.T) {
 				"[atlassian-mcp] version:",
 				"[atlassian-mcp] modules: jira(r)",
 				"[atlassian-mcp] write guard: enabled (ENABLE_WRITE=true)",
-				"[atlassian-mcp] tools: 8/79 registered",
+				"[atlassian-mcp] tools: 8/80 registered",
 			},
 		},
 	}
@@ -272,6 +272,10 @@ func (m *mockServerGoalsService) GetGoal(ctx context.Context, goalID string) (*g
 }
 
 func (m *mockServerGoalsService) SearchGoals(ctx context.Context, req goals.SearchGoalsRequest) (*goals.GoalSearchResult, error) {
+	return &goals.GoalSearchResult{Goals: []goals.Goal{}}, nil
+}
+
+func (m *mockServerGoalsService) GetGoalsByOwner(ctx context.Context, req goals.GoalsByOwnerRequest) (*goals.GoalSearchResult, error) {
 	return &goals.GoalSearchResult{Goals: []goals.Goal{}}, nil
 }
 

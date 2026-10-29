@@ -586,6 +586,32 @@ func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc 
 			),
 			ToolSearchGoals(goalsSvc),
 		)
+
+		s.AddTool(
+			mcp.NewTool(
+				"get_goals_by_owner",
+				mcp.WithDescription("List the goals owned by one person. Filters server-side, so prefer this over search_goals when you need one person's goals."),
+				mcp.WithString(
+					"site_id",
+					mcp.Required(),
+					mcp.Description("cloudId from get_site_id"),
+				),
+				mcp.WithString(
+					"owner_id",
+					mcp.Required(),
+					mcp.Description("Atlassian account ID as printed in the owner_id field of search_goals results (e.g. '712020:7bfdc0f9-...'), or a full 'ari:cloud:identity::user/...' ARI"),
+				),
+				mcp.WithNumber(
+					"max_results",
+					mcp.Description("Max goals to return (default 25)"),
+				),
+				mcp.WithString(
+					"cursor",
+					mcp.Description("Pagination cursor from a previous get_goals_by_owner response"),
+				),
+			),
+			ToolGetGoalsByOwner(goalsSvc),
+		)
 	}
 
 	// --- GOALS WRITE (3 tools) ---

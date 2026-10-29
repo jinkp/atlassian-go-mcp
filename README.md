@@ -53,7 +53,7 @@ By default the MCP server exposes all 60 tools. Use `--enable` to limit scope:
 atlassian-mcp mcp --enable jira              # 7 tools (Jira only)
 atlassian-mcp mcp --enable jira-read         # 4 read-only tools
 atlassian-mcp mcp --enable jira,agile        # 15 tools
-atlassian-mcp mcp --enable goals,metrics     # 10 tools
+atlassian-mcp mcp --enable goals,metrics     # 11 tools
 atlassian-mcp mcp --enable bitbucket         # 21 tools (Bitbucket only)
 atlassian-mcp mcp --enable bitbucket-read    # 12 read-only tools
 atlassian-mcp mcp --enable all               # 60 tools (default)
@@ -238,6 +238,10 @@ atlassian goals site-id --subdomain myorg
 atlassian goals get "ari:cloud:townsquare:abc:goal/xyz"
 atlassian goals search --site-id <cloudId> [--query "Analytics"] [--max-results 25] [--cursor <next_cursor>]
 
+# All goals owned by one person — server-side filter.
+# --owner takes the owner_id printed by `goals search`, or a full user ARI.
+atlassian goals by-owner --site-id <cloudId> --owner 712020:7bfdc0f9-... [--max-results 25] [--cursor <next_cursor>]
+
 # Write
 atlassian goals create --site-id <cloudId> --name "Grow MRR 20%" \
   --type-id "ari:cloud:goal:<siteId>:goal-type/..." --target-date 2026-12-31 \
@@ -272,9 +276,11 @@ Consequences worth knowing:
   **stderr** so `-o json` stays parseable. **An empty result with
   `scan_incomplete: true` does not mean nothing matches** — it means the scan ran
   out of budget. Resume with `--cursor <next_cursor>`.
-- To filter by status or owner, read the `status` and `owner_name` / `owner_id`
-  fields of the results. Observed statuses: `on_track`, `off_track`, `pending`,
-  `archived`.
+- To filter by status, read the `status` field of the results. Observed
+  statuses: `on_track`, `off_track`, `pending`, `archived`.
+- **To filter by owner, use `goals by-owner` instead** — that one is a real
+  server-side query (`graphStore_atlasGoalHasOwnerInverse`), so it is complete
+  for the page requested and never reports an incomplete scan.
 
 ### Releases
 
@@ -375,12 +381,13 @@ ENABLE_WRITE=true ./atlassian-mcp mcp
 | `move_issues_to_sprint` | `sprint_id` (req), `issue_keys` (req, comma-sep, max 50) | Move issues to sprint |
 | `move_issues_to_epic` | `epic_key` (req), `issue_keys` (req, comma-sep) | Link issues to epic |
 
-### Goals Read (3)
+### Goals Read (4, plus `get_goal_metrics` from the `metrics` module)
 | Tool | Args | Description |
 |------|------|-------------|
 | `get_site_id` | `subdomain` (req, e.g. `myorg`) | Get Atlassian cloud ID |
 | `get_goal` | `goal_id` (req, ARI) | Get goal by ID |
 | `search_goals` | `site_id` (req), `search_string` (opt), `max_results` (opt), `cursor` (opt) | List goals; `search_string` is a text match on name/key, **not** JQL. May return `scan_incomplete` |
+| `get_goals_by_owner` | `site_id`, `owner_id` (req); `max_results`, `cursor` (opt) | List one person's goals. Filters server-side |
 | `get_goal_metrics` | `goal_id` (req) | List metric targets for a goal |
 
 ### Goals Write (5) — `ENABLE_WRITE=true`
@@ -541,7 +548,9 @@ POST /bitbucket/pipelines                           (X-Enable-Write: true)
 ### Goal + metrics workflow
 ```
 1. get_site_id            → get cloudId for your org
-2. search_goals           → find goals by status/owner
+2. search_goals           → list goals / match on name or key, then read
+                            status and owner_id from the results
+2b. get_goals_by_owner    → one person's goals (server-side filter)
 3. get_goal_metrics       → see current metric values
 4. update_metric_value    → record new actual value
 5. update_goal_status     → post check-in (score + summary)

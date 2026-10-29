@@ -21,6 +21,7 @@ func RegisterCommands(root *cobra.Command, svc goals.GoalsService, auditLog audi
 	root.AddCommand(NewSiteIDCmd(svc))
 	root.AddCommand(NewGetCmd(svc))
 	root.AddCommand(NewSearchCmd(svc))
+	root.AddCommand(NewByOwnerCmd(svc))
 	root.AddCommand(NewCreateCmd(svc, auditLog, dryRun))
 	root.AddCommand(NewUpdateCmd(svc, auditLog, dryRun))
 	root.AddCommand(NewEditCmd(svc, auditLog, dryRun))

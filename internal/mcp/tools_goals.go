@@ -104,6 +104,46 @@ func ToolGetGoal(goalsSvc goals.GoalsService) server.ToolHandlerFunc {
 	}
 }
 
+// ToolGetGoalsByOwner returns an MCP tool handler listing one owner's goals.
+// Required: site_id, owner_id. Optional: max_results, cursor.
+// Returns GoalSearchResult JSON.
+//
+// This filters server-side, so unlike search_goals it never reports an
+// incomplete scan.
+func ToolGetGoalsByOwner(goalsSvc goals.GoalsService) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		siteID := mcp.ParseString(req, "site_id", "")
+		if siteID == "" {
+			return mcp.NewToolResultError("site_id is required"), nil
+		}
+		ownerID := mcp.ParseString(req, "owner_id", "")
+		if ownerID == "" {
+			return mcp.NewToolResultError("owner_id is required"), nil
+		}
+
+		result, svcErr := goalsSvc.GetGoalsByOwner(ctx, goals.GoalsByOwnerRequest{
+			SiteID:     siteID,
+			OwnerID:    ownerID,
+			MaxResults: int(mcp.ParseInt(req, "max_results", 0)),
+			Cursor:     mcp.ParseString(req, "cursor", ""),
+		})
+		if svcErr != nil {
+			return mcp.NewToolResultError(svcErr.Error()), nil
+		}
+
+		// Ensure Goals is never null in JSON output
+		if result.Goals == nil {
+			result.Goals = []goals.Goal{}
+		}
+
+		data, marshalErr := json.Marshal(result)
+		if marshalErr != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("serialization error: %v", marshalErr)), nil
+		}
+		return mcp.NewToolResultText(string(data)), nil
+	}
+}
+
 // ToolSearchGoals returns an MCP tool handler that searches goals.
 // Required: site_id. Optional: search_string, max_results, cursor.
 // Returns GoalSearchResult JSON.

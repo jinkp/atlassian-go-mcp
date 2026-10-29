@@ -316,6 +316,9 @@ func (n *nilGoalsService) GetGoal(_ context.Context, _ string) (*goalssvc.Goal, 
 func (n *nilGoalsService) SearchGoals(_ context.Context, _ goalssvc.SearchGoalsRequest) (*goalssvc.GoalSearchResult, error) {
 	return nil, fmt.Errorf("service not initialized: missing env vars")
 }
+func (n *nilGoalsService) GetGoalsByOwner(_ context.Context, _ goalssvc.GoalsByOwnerRequest) (*goalssvc.GoalSearchResult, error) {
+	return nil, fmt.Errorf("service not initialized: missing env vars")
+}
 func (n *nilGoalsService) UpdateGoalStatus(_ context.Context, _ goalssvc.UpdateGoalStatusRequest) error {
 	return fmt.Errorf("service not initialized: missing env vars")
 }

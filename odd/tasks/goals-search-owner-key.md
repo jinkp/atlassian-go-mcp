@@ -64,7 +64,7 @@ Also available and unused, deliberately deferred: `goals_goalTypes(containerId)`
 | ID | Specs | Route | Status | Evidence |
 | --- | --- | --- | --- | --- |
 | T1 | S1 | inline | done | RED observed (missing `Key`/`ScanIncomplete`/`maxFilterScanPages`, then 3 failing CLI behaviours) → GREEN. `go test ./...` all packages ok, `go vet ./...` clean. Live differential check vs `main` recorded in L4. Risk: none. |
-| T2 | S2 | inline | pending | — |
+| T2 | S2 | inline | done | RED observed (missing `GoalsByOwnerRequest`/`GetGoalsByOwner`, then the MCP/CLI behaviours) → GREEN. `go test ./...` all packages ok, `go vet ./...` clean. Live verification recorded in L7. Risk: none. |
 | T3 | S3 | inline | pending | — |
 
 Routing rationale: all three tasks edit `internal/atlassian/goals/service.go`, `internal/atlassian/goals/models.go` and `README.md`. The edit surfaces are NOT disjoint, so the Writer trigger does not apply and parallel writers are unsafe. The parent writes inline, sequentially, one work-unit commit per task.
@@ -112,4 +112,26 @@ Fixed with three failing tests first: an incomplete scan with no matches must no
 
 `Risk: none`. Reasoning against the high-risk list: `key` on `Goal` and `scan_incomplete` on `GoalSearchResult` are added optional fields, and `--cursor` is an added flag — both explicitly excluded from the "contracts others consume" item. `GetGoal` shares `toGoal()` and therefore also gained `key`, which the request did not mention, but an added optional field is not a break. The one genuine behaviour change on a consumed contract — `--query` / `search_goals.search_string` now filtering instead of silently returning everything — is the explicitly requested fix, and requested changes are not high risk by themselves. No migration, credential, concurrency, delivery or untested surface is touched.
 
-Next step: T2, owner filtering via `graphStore_atlasGoalHasOwnerInverse`.
+### L7 — T2 evidence: owner filtering verified live (2026-10-29)
+
+- `goals by-owner --site-id <site> --owner 712020:7bfdc0f9-... --max-results 5 -o json` returned 5 goals, all 5 owned by exactly one person (Roberto Dzul). Distinct owner count in the output: 1.
+- A second owner (`712020:2eee3493-...`, Andres Mena Dorantes) returned a disjoint set of goals, so the filter actually varies with the argument.
+- The bare account ID and the full `ari:cloud:identity::user/...` form return identical goal IDs.
+- An owner who owns nothing prints "No goals found for that owner" and exits 0.
+- Omitting `--owner` exits 1 with `required flag(s) "owner" not set`; the service is never called.
+
+Cursor gotcha found while verifying: `next_cursor` is a KMS-encrypted opaque token that the API regenerates on every request, so two otherwise identical responses differ in that field. Comparing whole responses byte-for-byte across requests gives a false negative; compare goal IDs instead.
+
+Adding a method to `GoalsService` touched five implementors — `nilGoalsService` in `cmd/atlassian/main.go` plus the four test mocks in `cmd/atlassian/goals/site_id_test.go`, `internal/api/handlers/goals_test.go`, `internal/mcp/tools_goals_test.go` and `internal/mcp/server_test.go`. The registered-tool count moved 79 → 80, which required updating the hardcoded expectations in `internal/mcp/features/features_test.go` and `internal/mcp/server_test.go` and the module count in `features.go` (`ModuleGoals` 3 → 4 read).
+
+No REST handler was added. `internal/api` already omits the goal metrics endpoints (noted in `README.md`), so S2 scoped the surface to CLI plus MCP and the REST gap stays consistent rather than half-closed.
+
+### L8 — Formatting baseline note (2026-10-29)
+
+`gofmt -l` flags almost every file in this repository on Windows because the working tree is CRLF. Normalising line endings in a scratch copy and re-running gofmt showed that `internal/atlassian/goals/models.go` and `internal/mcp/tools_goals.go` are genuinely unformatted — and that both were ALREADY unformatted on `main` (verified against the base worktree), in blocks this work never touched: `metricTargetAPIItem` field alignment, the import order in `tools_goals.go`, and a trailing blank line. Those were left alone rather than reformatted, to keep the diff reviewable. The one block actually edited here, the `Goal` struct, was left gofmt-correct.
+
+### L9 — Risk assessment for T2 (2026-10-29)
+
+`Risk: none`. New method, new CLI command, new MCP tool: all additive. `GoalsService` gained a method, which is an internal interface with all five implementors updated in the same commit, not a published contract. No existing command's behaviour changed; the tool-count test updates are mechanical consequences of registering one new tool. No migration, credential, concurrency or delivery surface is touched, and the new code is covered by service, MCP and CLI tests plus live verification.
+
+Next step: T3, key-based lookup via `goals_byKey`.

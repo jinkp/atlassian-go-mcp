@@ -182,15 +182,15 @@ func TestEnabledToolCount(t *testing.T) {
 		input string
 		want  int
 	}{
-		{"F3.1 all → 79", "all", 79},
-		{"F3.2 empty → 79", "", 79},
+		{"F3.1 all → 80", "all", 80},
+		{"F3.2 empty → 80", "", 80},
 		{"F3.3 jira → 14", "jira", 14},
 		{"F3.4 jira-read → 8", "jira-read", 8},
 		{"F3.5 jira-write → 6", "jira-write", 6},
 		{"F3.6 agile → 8", "agile", 8},
-		{"F3.7 goals → 6", "goals", 6},
+		{"F3.7 goals → 7", "goals", 7},
 		{"F3.8 metrics → 4", "metrics", 4},
-		{"F3.9 goals,metrics → 10", "goals,metrics", 10},
+		{"F3.9 goals,metrics → 11", "goals,metrics", 11},
 		{"F3.10 releases → 7", "releases", 7},
 		{"F3.11 projects → 4", "projects", 4},
 		{"F3.12 teams → 3", "teams", 3},
@@ -302,8 +302,8 @@ func TestDiagnostics(t *testing.T) {
 // Updated: confluence module added {8,4} → total is now 79 (was 67).
 func TestTotalToolCount(t *testing.T) {
 	got := TotalToolCount()
-	if got != 79 {
-		t.Errorf("TotalToolCount(): got %d, want 79", got)
+	if got != 80 {
+		t.Errorf("TotalToolCount(): got %d, want 80", got)
 	}
 }
 
@@ -336,8 +336,8 @@ func TestDefaultProfile(t *testing.T) {
 		if !fs.IsEnabled(ModuleConfluence, true) {
 			t.Error("Parse('all'): confluence write should be enabled")
 		}
-		if got := fs.EnabledToolCount(); got != 79 {
-			t.Errorf("Parse('all').EnabledToolCount(): got %d, want 79", got)
+		if got := fs.EnabledToolCount(); got != 80 {
+			t.Errorf("Parse('all').EnabledToolCount(): got %d, want 80", got)
 		}
 	})
 
@@ -359,9 +359,9 @@ func TestDefaultProfile(t *testing.T) {
 				t.Errorf("DefaultProfile: module %q write should be enabled", mod)
 			}
 		}
-		// tool count = 79 - 12 (confluence) = 67
-		if got := fs.EnabledToolCount(); got != 67 {
-			t.Errorf("DefaultProfile.EnabledToolCount(): got %d, want 67", got)
+		// tool count = 80 - 12 (confluence) = 68
+		if got := fs.EnabledToolCount(); got != 68 {
+			t.Errorf("DefaultProfile.EnabledToolCount(): got %d, want 68", got)
 		}
 	})
 
@@ -378,13 +378,13 @@ func TestDefaultProfile(t *testing.T) {
 		}
 	})
 
-	t.Run("lean+confluence enables 9 modules (79 tools)", func(t *testing.T) {
+	t.Run("lean+confluence enables 9 modules (80 tools)", func(t *testing.T) {
 		fs := Parse(DefaultProfile + ",confluence")
 		if !fs.IsEnabled(ModuleConfluence, false) {
 			t.Error("lean+confluence: confluence read should be enabled")
 		}
-		if got := fs.EnabledToolCount(); got != 79 {
-			t.Errorf("lean+confluence EnabledToolCount(): got %d, want 79", got)
+		if got := fs.EnabledToolCount(); got != 80 {
+			t.Errorf("lean+confluence EnabledToolCount(): got %d, want 80", got)
 		}
 	})
 }

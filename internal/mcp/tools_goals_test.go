@@ -17,6 +17,7 @@ type mockGoalsService struct {
 	getSiteIDFunc         func(ctx context.Context, subdomain string) (string, error)
 	getGoalFunc           func(ctx context.Context, goalID string) (*goals.Goal, error)
 	searchGoalsFunc       func(ctx context.Context, req goals.SearchGoalsRequest) (*goals.GoalSearchResult, error)
+	getGoalsByOwnerFunc   func(ctx context.Context, req goals.GoalsByOwnerRequest) (*goals.GoalSearchResult, error)
 	updateGoalStatusFunc  func(ctx context.Context, req goals.UpdateGoalStatusRequest) error
 	createGoalFunc        func(ctx context.Context, req goals.CreateGoalRequest) (*goals.CreateGoalResult, error)
 	editGoalFunc          func(ctx context.Context, req goals.EditGoalRequest) (*goals.Goal, error)
@@ -43,6 +44,13 @@ func (m *mockGoalsService) GetGoal(ctx context.Context, goalID string) (*goals.G
 func (m *mockGoalsService) SearchGoals(ctx context.Context, req goals.SearchGoalsRequest) (*goals.GoalSearchResult, error) {
 	if m.searchGoalsFunc != nil {
 		return m.searchGoalsFunc(ctx, req)
+	}
+	return &goals.GoalSearchResult{Goals: []goals.Goal{}}, nil
+}
+
+func (m *mockGoalsService) GetGoalsByOwner(ctx context.Context, req goals.GoalsByOwnerRequest) (*goals.GoalSearchResult, error) {
+	if m.getGoalsByOwnerFunc != nil {
+		return m.getGoalsByOwnerFunc(ctx, req)
 	}
 	return &goals.GoalSearchResult{Goals: []goals.Goal{}}, nil
 }

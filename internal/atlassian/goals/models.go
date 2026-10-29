@@ -11,8 +11,8 @@ type Goal struct {
 	ID         string `json:"id"`
 	Key        string `json:"key,omitempty"` // human-readable key, e.g. "ZQEAYBZU-633"
 	Name       string `json:"name"`
-	Status     string `json:"status"`      // on_track | off_track | at_risk | pending | archived
-	Phase      string `json:"phase"`       // pending | in_progress | done | paused | cancelled
+	Status     string `json:"status"` // on_track | off_track | at_risk | pending | archived
+	Phase      string `json:"phase"`  // pending | in_progress | done | paused | cancelled
 	Score      int    `json:"score"`
 	TargetDate string `json:"target_date,omitempty"`
 	StartDate  string `json:"start_date,omitempty"`
@@ -34,6 +34,20 @@ type SearchGoalsRequest struct {
 	// byte-identical result sets — and offers no filter input, so narrowing can
 	// only be done after fetching. See maxFilterScanPages for the scan bound.
 	SearchString string
+
+	MaxResults int    // default 25 when zero
+	Cursor     string // optional; for cursor-based pagination
+}
+
+// GoalsByOwnerRequest holds parameters for listing one owner's goals.
+type GoalsByOwnerRequest struct {
+	// SiteID is required. It builds the query context ARI the API demands.
+	SiteID string
+
+	// OwnerID is required. Either a bare Atlassian account ID, as printed in
+	// the owner_id field of search results (e.g. "712020:7bfdc0f9-..."), or a
+	// full "ari:cloud:identity::user/..." ARI. A bare ID is expanded.
+	OwnerID string
 
 	MaxResults int    // default 25 when zero
 	Cursor     string // optional; for cursor-based pagination
@@ -160,6 +174,24 @@ func (item goalAPIItem) toGoal() Goal {
 		g.OwnerID = item.Owner.AccountID
 	}
 	return g
+}
+
+// goalsByOwnerData is the shape of
+// {"data":{"graphStore_atlasGoalHasOwnerInverse":{"edges":[...],"pageInfo":{...}}}}
+//
+// The edge node is the union GraphStoreSimplifiedAtlasGoalHasOwnerInverseUnion,
+// whose only member is TownsquareGoal. The query selects it through an inline
+// fragment, so a node of any future member decodes as a zero goalAPIItem.
+type goalsByOwnerData struct {
+	Result struct {
+		Edges []struct {
+			Node goalAPIItem `json:"node"`
+		} `json:"edges"`
+		PageInfo struct {
+			HasNextPage bool   `json:"hasNextPage"`
+			EndCursor   string `json:"endCursor"`
+		} `json:"pageInfo"`
+	} `json:"graphStore_atlasGoalHasOwnerInverse"`
 }
 
 // goalsCreateUpdateData is the shape of {"data":{"goals_createUpdate":{...}}}

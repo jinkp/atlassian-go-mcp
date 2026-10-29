@@ -13,6 +13,7 @@ type mockGoalsService struct {
 	getSiteIDFunc          func(ctx context.Context, subdomain string) (string, error)
 	getGoalFunc            func(ctx context.Context, goalID string) (*goalssvc.Goal, error)
 	searchGoalsFunc        func(ctx context.Context, req goalssvc.SearchGoalsRequest) (*goalssvc.GoalSearchResult, error)
+	getGoalsByOwnerFunc    func(ctx context.Context, req goalssvc.GoalsByOwnerRequest) (*goalssvc.GoalSearchResult, error)
 	updateGoalStatusFunc   func(ctx context.Context, req goalssvc.UpdateGoalStatusRequest) error
 	createGoalFunc         func(ctx context.Context, req goalssvc.CreateGoalRequest) (*goalssvc.CreateGoalResult, error)
 	editGoalFunc           func(ctx context.Context, req goalssvc.EditGoalRequest) (*goalssvc.Goal, error)
@@ -37,6 +38,12 @@ func (m *mockGoalsService) GetGoal(ctx context.Context, goalID string) (*goalssv
 func (m *mockGoalsService) SearchGoals(ctx context.Context, req goalssvc.SearchGoalsRequest) (*goalssvc.GoalSearchResult, error) {
 	if m.searchGoalsFunc != nil {
 		return m.searchGoalsFunc(ctx, req)
+	}
+	return nil, errors.New("not implemented")
+}
+func (m *mockGoalsService) GetGoalsByOwner(ctx context.Context, req goalssvc.GoalsByOwnerRequest) (*goalssvc.GoalSearchResult, error) {
+	if m.getGoalsByOwnerFunc != nil {
+		return m.getGoalsByOwnerFunc(ctx, req)
 	}
 	return nil, errors.New("not implemented")
 }
