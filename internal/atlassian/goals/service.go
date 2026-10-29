@@ -7,12 +7,26 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/jinkp/atlassian-go-mcp/internal/atlassian/client"
 	jira "github.com/jinkp/atlassian-go-mcp/internal/atlassian/jira"
 )
 
 const defaultMaxResults = 25
+
+// The Goals GraphQL API accepts a searchString argument on goals_search but
+// ignores it, and exposes no filter input object, so SearchGoals narrows results
+// client-side. That means walking pages until enough matches are found, which on
+// a large site could run unbounded — these two constants bound it. A scan that
+// ends because of the page budget is reported via GoalSearchResult.ScanIncomplete
+// rather than passed off as an exhaustive answer.
+const (
+	// maxFilterScanPages caps how many API pages one filtered search may fetch.
+	maxFilterScanPages = 20
+	// filterScanPageSize is the page size used while scanning for matches.
+	filterScanPageSize = 50
+)
 
 // GoalsService defines read and write operations against the Atlassian Goals GraphQL API.
 type GoalsService interface {
@@ -115,7 +129,7 @@ func (s *GoalsGraphQLService) GetSiteID(ctx context.Context, subdomain string) (
 func (s *GoalsGraphQLService) GetGoal(ctx context.Context, goalID string) (*Goal, error) {
 	const query = `query GetGoal($goalId: ID!) {
   goals_byId(goalId: $goalId) {
-    id name startDate
+    id key name startDate
     targetDate { label }
     status { value score }
     owner { ... on AtlassianAccountUser { name accountId } }
@@ -142,20 +156,117 @@ func (s *GoalsGraphQLService) GetGoal(ctx context.Context, goalID string) (*Goal
 	return &g, nil
 }
 
-// SearchGoals searches for goals using the goals_search query with JQL-like syntax.
+// SearchGoals returns goals for a site, optionally narrowed by req.SearchString.
+//
+// With an empty SearchString it returns one API page as-is. With a non-empty one
+// it walks pages and keeps only the goals whose name or key contains the search
+// string, compared case-insensitively — the API ignores its own searchString
+// argument, so the caller's filter would otherwise be silently dropped and an
+// unfiltered list returned as if it had been filtered.
 func (s *GoalsGraphQLService) SearchGoals(ctx context.Context, req SearchGoalsRequest) (*GoalSearchResult, error) {
 	maxResults := req.MaxResults
 	if maxResults <= 0 {
 		maxResults = defaultMaxResults
 	}
 
-	containerId := "ari:cloud:townsquare::site/" + req.SiteID
+	needle := strings.ToLower(strings.TrimSpace(req.SearchString))
+	if needle == "" {
+		page, err := s.fetchGoalsPage(ctx, req.SiteID, maxResults, req.Cursor)
+		if err != nil {
+			return nil, err
+		}
+		return &GoalSearchResult{
+			Goals:      page.goals,
+			HasMore:    page.hasNextPage,
+			NextCursor: page.endCursor,
+		}, nil
+	}
 
-	const query = `query SearchGoals($containerId: ID!, $searchString: String, $first: Int, $after: String) {
-  goals_search(containerId: $containerId, searchString: $searchString, first: $first, after: $after, sort: [NAME_ASC]) {
+	matches := make([]Goal, 0, maxResults)
+	cursor := req.Cursor
+	resumeCursor := req.Cursor
+	hasNextPage := false
+	overflowed := false
+	pagesScanned := 0
+
+	for pagesScanned < maxFilterScanPages {
+		pageStart := cursor
+
+		page, err := s.fetchGoalsPage(ctx, req.SiteID, filterScanPageSize, cursor)
+		if err != nil {
+			return nil, err
+		}
+		pagesScanned++
+		hasNextPage = page.hasNextPage
+		cursor = page.endCursor
+
+		for _, g := range page.goals {
+			if goalMatchesNeedle(g, needle) {
+				matches = append(matches, g)
+			}
+		}
+
+		// More matches than asked for means the cap fell inside this page. The
+		// API only hands out cursors at page boundaries, so the only way not to
+		// lose the dropped matches is to resume at the start of this same page.
+		if len(matches) > maxResults {
+			overflowed = true
+			resumeCursor = pageStart
+			break
+		}
+
+		resumeCursor = page.endCursor
+		if len(matches) == maxResults || !page.hasNextPage {
+			break
+		}
+	}
+
+	// Stopping with pages left and fewer matches than requested means the budget
+	// cut the scan short, so this answer is not exhaustive and must say so.
+	scanIncomplete := !overflowed && hasNextPage && len(matches) < maxResults
+
+	if len(matches) > maxResults {
+		matches = matches[:maxResults]
+	}
+
+	hasMore := overflowed || hasNextPage
+	if !hasMore {
+		resumeCursor = ""
+	}
+
+	return &GoalSearchResult{
+		Goals:          matches,
+		HasMore:        hasMore,
+		NextCursor:     resumeCursor,
+		ScanIncomplete: scanIncomplete,
+	}, nil
+}
+
+// goalMatchesNeedle reports whether the goal's name or key contains needle.
+// needle must already be lower-cased and trimmed.
+func goalMatchesNeedle(g Goal, needle string) bool {
+	return strings.Contains(strings.ToLower(g.Name), needle) ||
+		strings.Contains(strings.ToLower(g.Key), needle)
+}
+
+// goalsPage is one decoded page of the goals_search connection.
+type goalsPage struct {
+	goals       []Goal
+	hasNextPage bool
+	endCursor   string
+}
+
+// fetchGoalsPage fetches a single goals_search page for a site.
+//
+// The API's own searchString argument is deliberately not sent: it is ignored
+// server-side, so passing it would suggest a server-side filter that does not
+// exist. Narrowing is the caller's job.
+func (s *GoalsGraphQLService) fetchGoalsPage(ctx context.Context, siteID string, first int, cursor string) (*goalsPage, error) {
+	const query = `query SearchGoals($containerId: ID!, $first: Int, $after: String) {
+  goals_search(containerId: $containerId, first: $first, after: $after, sort: [NAME_ASC]) {
     edges {
       node {
-        id name startDate
+        id key name startDate
         targetDate { label }
         status { value score }
         owner { ... on AtlassianAccountUser { name accountId } }
@@ -168,12 +279,11 @@ func (s *GoalsGraphQLService) SearchGoals(ctx context.Context, req SearchGoalsRe
   }
 }`
 	variables := map[string]any{
-		"containerId":  containerId,
-		"searchString": req.SearchString,
-		"first":        maxResults,
+		"containerId": "ari:cloud:townsquare::site/" + siteID,
+		"first":       first,
 	}
-	if req.Cursor != "" {
-		variables["after"] = req.Cursor
+	if cursor != "" {
+		variables["after"] = cursor
 	}
 
 	envelope, err := s.doGraphQL(ctx, query, variables)
@@ -194,10 +304,10 @@ func (s *GoalsGraphQLService) SearchGoals(ctx context.Context, req SearchGoalsRe
 		goalsList[i] = edge.Node.toGoal()
 	}
 
-	return &GoalSearchResult{
-		Goals:      goalsList,
-		HasMore:    data.GoalsSearch.PageInfo.HasNextPage,
-		NextCursor: data.GoalsSearch.PageInfo.EndCursor,
+	return &goalsPage{
+		goals:       goalsList,
+		hasNextPage: data.GoalsSearch.PageInfo.HasNextPage,
+		endCursor:   data.GoalsSearch.PageInfo.EndCursor,
 	}, nil
 }
 

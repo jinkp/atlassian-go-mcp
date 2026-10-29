@@ -107,6 +107,10 @@ func ToolGetGoal(goalsSvc goals.GoalsService) server.ToolHandlerFunc {
 // ToolSearchGoals returns an MCP tool handler that searches goals.
 // Required: site_id. Optional: search_string, max_results, cursor.
 // Returns GoalSearchResult JSON.
+//
+// search_string is plain text matched against the goal name and key, not a query
+// language. The result may carry scan_incomplete, meaning the filtered scan was
+// cut short by its page budget and more matches may exist past next_cursor.
 func ToolSearchGoals(goalsSvc goals.GoalsService) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		siteID := mcp.ParseString(req, "site_id", "")

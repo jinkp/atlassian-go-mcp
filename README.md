@@ -236,7 +236,7 @@ atlassian goals site-id --subdomain myorg
 
 # Read
 atlassian goals get "ari:cloud:townsquare:abc:goal/xyz"
-atlassian goals search --site-id <cloudId> [--query "status = on_track"] [--max-results 25]
+atlassian goals search --site-id <cloudId> [--query "Analytics"] [--max-results 25] [--cursor <next_cursor>]
 
 # Write
 atlassian goals create --site-id <cloudId> --name "Grow MRR 20%" \
@@ -252,6 +252,29 @@ atlassian goals metric-create --goal-id "ari:..." --name "MRR Growth" \
 atlassian goals metric-value --metric-id "ari:..." --value 12.5 [--time 2024-01-15T00:00:00Z]
 atlassian goals metric-target --metric-target-id "ari:..." [--current 12.5] [--target 25]
 ```
+
+#### `--query` is a text match, not a query language
+
+`--query` matches plain text against each goal's **name and key**, case-insensitively.
+`--query "status = on_track"` is matched literally and finds nothing.
+
+This is a property of the API, not a shortcut on our side. The Goals GraphQL
+`goals_search` query accepts a `searchString` argument but **ignores it**, and
+exposes no filter input — probing a live site with `Analytics`, `Roberto`,
+`status = on_track` and `zzzznotexist` returns byte-identical result sets. So
+narrowing is done client-side, after fetching.
+
+Consequences worth knowing:
+
+- A narrowed search walks API pages until it collects `--max-results` matches,
+  bounded by a page budget. When the budget stops the scan first, the result sets
+  `scan_incomplete: true` and `next_cursor`, and the CLI prints a warning to
+  **stderr** so `-o json` stays parseable. **An empty result with
+  `scan_incomplete: true` does not mean nothing matches** — it means the scan ran
+  out of budget. Resume with `--cursor <next_cursor>`.
+- To filter by status or owner, read the `status` and `owner_name` / `owner_id`
+  fields of the results. Observed statuses: `on_track`, `off_track`, `pending`,
+  `archived`.
 
 ### Releases
 
@@ -357,7 +380,7 @@ ENABLE_WRITE=true ./atlassian-mcp mcp
 |------|------|-------------|
 | `get_site_id` | `subdomain` (req, e.g. `myorg`) | Get Atlassian cloud ID |
 | `get_goal` | `goal_id` (req, ARI) | Get goal by ID |
-| `search_goals` | `site_id` (req), `search_string` (opt), `max_results` (opt), `cursor` (opt) | Search goals |
+| `search_goals` | `site_id` (req), `search_string` (opt), `max_results` (opt), `cursor` (opt) | List goals; `search_string` is a text match on name/key, **not** JQL. May return `scan_incomplete` |
 | `get_goal_metrics` | `goal_id` (req) | List metric targets for a goal |
 
 ### Goals Write (5) — `ENABLE_WRITE=true`

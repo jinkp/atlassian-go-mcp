@@ -565,7 +565,7 @@ func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc 
 		s.AddTool(
 			mcp.NewTool(
 				"search_goals",
-				mcp.WithDescription("Search Atlassian Goals with JQL-like syntax"),
+				mcp.WithDescription("List Atlassian Goals for a site, optionally narrowed by a text match on goal name or key. This is NOT a query language — do not send JQL."),
 				mcp.WithString(
 					"site_id",
 					mcp.Required(),
@@ -573,7 +573,7 @@ func NewAtlassianServer(svc jira.Service, agileSvc agile.AgileService, goalsSvc 
 				),
 				mcp.WithString(
 					"search_string",
-					mcp.Description("Goals search query, e.g. 'status = on_track AND owner = \"acctId\"'"),
+					mcp.Description("Plain text matched case-insensitively against the goal name and key, e.g. 'Analytics' or 'ZQEAYBZU-633'. NOT a query language: 'status = on_track' is matched literally and will find nothing. To filter by status or owner, read the 'status' and 'owner_name' fields of the results."),
 				),
 				mcp.WithNumber(
 					"max_results",

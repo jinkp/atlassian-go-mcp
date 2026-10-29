@@ -9,8 +9,9 @@ import (
 // Goal is the domain model for an Atlassian Goal.
 type Goal struct {
 	ID         string `json:"id"`
+	Key        string `json:"key,omitempty"` // human-readable key, e.g. "ZQEAYBZU-633"
 	Name       string `json:"name"`
-	Status     string `json:"status"`      // on_track | off_track | at_risk
+	Status     string `json:"status"`      // on_track | off_track | at_risk | pending | archived
 	Phase      string `json:"phase"`       // pending | in_progress | done | paused | cancelled
 	Score      int    `json:"score"`
 	TargetDate string `json:"target_date,omitempty"`
@@ -21,10 +22,21 @@ type Goal struct {
 
 // SearchGoalsRequest holds search parameters for goals_search.
 type SearchGoalsRequest struct {
-	SiteID       string // required; used to build containerId ARI
-	SearchString string // optional; JQL-like Goals search syntax
-	MaxResults   int    // default 25 when zero
-	Cursor       string // optional; for cursor-based pagination
+	SiteID string // required; used to build containerId ARI
+
+	// SearchString optionally narrows the result set to goals whose name or key
+	// contains it, compared case-insensitively. It is NOT a query language: a
+	// value like "status = on_track" is matched literally and will find nothing.
+	//
+	// Matching happens client-side. The Goals GraphQL API exposes a searchString
+	// argument on goals_search but ignores it — probing a live tenant with
+	// "Analytics", "Roberto", "status = on_track" and "zzzznotexist" returned
+	// byte-identical result sets — and offers no filter input, so narrowing can
+	// only be done after fetching. See maxFilterScanPages for the scan bound.
+	SearchString string
+
+	MaxResults int    // default 25 when zero
+	Cursor     string // optional; for cursor-based pagination
 }
 
 // GoalSearchResult holds a paginated page of goals.
@@ -32,6 +44,13 @@ type GoalSearchResult struct {
 	Goals      []Goal `json:"goals"`
 	HasMore    bool   `json:"has_more"`
 	NextCursor string `json:"next_cursor,omitempty"`
+
+	// ScanIncomplete reports that a filtered search stopped before exhausting the
+	// site because it hit the page budget, so further matches may exist beyond
+	// NextCursor. It is never set for an unfiltered search, where HasMore alone
+	// already describes paging. Callers must not present an incomplete scan as a
+	// definitive "no more matches".
+	ScanIncomplete bool `json:"scan_incomplete,omitempty"`
 }
 
 // UpdateGoalStatusRequest holds parameters for goals_createUpdate mutation.
@@ -105,6 +124,7 @@ type goalsSearchData struct {
 // goalAPIItem is the wire-format goal node returned by goals_byId and goals_search edges.
 type goalAPIItem struct {
 	ID         string `json:"id"`
+	Key        string `json:"key"`
 	Name       string `json:"name"`
 	TargetDate *struct {
 		Label string `json:"label"`
@@ -124,6 +144,7 @@ type goalAPIItem struct {
 func (item goalAPIItem) toGoal() Goal {
 	g := Goal{
 		ID:        item.ID,
+		Key:       item.Key,
 		Name:      item.Name,
 		Status:    item.Status.Value,
 		StartDate: item.StartDate,

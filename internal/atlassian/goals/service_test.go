@@ -277,8 +277,14 @@ func TestSearchGoals(t *testing.T) {
 		wantBodyVal  int    // expected int value of wantBodyKey
 	}{
 		{
+			// Previously this case passed SearchString "status = on_track" and
+			// expected both "Goal One" and "Goal Two" back, which pinned the
+			// defect: the filter was ignored and everything was returned. A
+			// JQL-like needle is now matched literally and finds nothing — see
+			// TestSearchGoalsFiltersClientSide. This case keeps covering the
+			// plain two-goal decode path, so it searches without a needle.
 			name:        "success - 2 goals returned",
-			req:         SearchGoalsRequest{SiteID: "abc-123", SearchString: "status = on_track", MaxResults: 10},
+			req:         SearchGoalsRequest{SiteID: "abc-123", MaxResults: 10},
 			wantLen:     2,
 			wantHasMore: false,
 			wantCursor:  "",
